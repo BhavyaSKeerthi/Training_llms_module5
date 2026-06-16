@@ -1,0 +1,486 @@
+<!DOCTYPE html><html lang="en"><head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>Deccan AI | Pre-Training Deep Dive</title>
+<style>@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+*{margin:0;padding:0;box-sizing:border-box;}
+body{font-family:'Inter',sans-serif;background:#111113;color:#F6F3F0;min-height:100vh;font-size:14px;}
+
+.topbar{background:#111113;border-bottom:1px solid #1e1e26;padding:12px 24px;display:flex;align-items:center;justify-content:space-between;position:sticky;top:0;z-index:100;}
+.brand{display:flex;align-items:center;gap:9px;}
+.brand-dot{width:28px;height:28px;background:#175FFF;border-radius:7px;display:flex;align-items:center;justify-content:center;color:#fff;font-weight:700;font-size:12px;flex-shrink:0;}
+.brand-name{font-size:13px;font-weight:600;color:#F6F3F0;}
+.brand-sub{font-size:10px;color:#555;margin-top:1px;}
+.mod-pill{background:rgba(23,95,255,.12);border:1px solid rgba(23,95,255,.25);color:#6e9fff;font-size:11px;font-weight:500;padding:4px 11px;border-radius:20px;}
+
+.steps{max-width:900px;margin:18px auto 0;padding:0 24px;display:flex;align-items:center;}
+.step{display:flex;align-items:center;gap:6px;flex:1;min-width:0;}
+.step-num{width:22px;height:22px;border-radius:50%;border:1.5px solid #2a2a34;display:flex;align-items:center;justify-content:center;font-size:10px;color:#444;flex-shrink:0;transition:all .3s;}
+.step-num.active{border-color:#175FFF;color:#6e9fff;background:rgba(23,95,255,.1);}
+.step-num.done{border-color:#00E5C8;background:rgba(0,229,200,.12);color:#00E5C8;}
+.step-lbl{font-size:11px;color:#444;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;transition:color .3s;}
+.step-lbl.active{color:#c8c8d4;}
+.step-line{flex:1;height:1px;background:#1e1e26;margin:0 4px;max-width:36px;transition:background .3s;}
+.step-line.done{background:#00E5C8;}
+
+/* Two-column layout: content | axon */
+.layout{max-width:900px;margin:0 auto;padding:0 24px;display:grid;grid-template-columns:1fr 220px;gap:20px;align-items:start;}
+
+/* Content column */
+.content{min-width:0;padding:18px 0 80px;}
+
+/* Axon column — sticky so it follows scroll */
+.axon-col{position:sticky;top:80px;padding:18px 0;}
+
+.hero{margin-bottom:18px;}
+.hero-tag{display:inline-block;background:rgba(23,95,255,.12);border:1px solid rgba(23,95,255,.2);color:#6e9fff;font-size:11px;font-weight:500;padding:3px 9px;border-radius:5px;margin-bottom:10px;}
+.hero h1{font-size:20px;font-weight:700;line-height:1.3;color:#F6F3F0;margin-bottom:6px;}
+.hero h1 span{color:#175FFF;}
+.hero p{font-size:13px;color:#6b6b7a;line-height:1.65;}
+
+.card{background:#161619;border:1px solid #1e1e26;border-radius:12px;padding:14px 16px;margin-bottom:12px;transition:border-color .25s,box-shadow .25s;}
+.card.highlight{border-color:rgba(23,95,255,.45);box-shadow:0 0 0 2px rgba(23,95,255,.08);}
+.card-label{font-size:10px;font-weight:600;color:#444;text-transform:uppercase;letter-spacing:.05em;margin-bottom:10px;}
+
+.info-card{display:flex;gap:12px;}
+.info-icon{width:30px;height:30px;background:rgba(23,95,255,.12);border:1px solid rgba(23,95,255,.2);border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:14px;flex-shrink:0;margin-top:1px;}
+.info-body h3{font-size:12px;font-weight:600;color:#F6F3F0;margin-bottom:4px;}
+.info-body p{font-size:12px;color:#6b6b7a;line-height:1.65;}
+.info-body p strong{color:#c8c8d4;}
+
+.reveal{opacity:0;transform:translateY(5px);transition:all .3s ease;pointer-events:none;}
+.reveal.show{opacity:1;transform:none;pointer-events:auto;}
+
+.hint-bar{background:#161619;border:1px solid #1e1e26;border-radius:8px;padding:9px 13px;font-size:12px;color:#6b6b7a;margin-bottom:12px;display:flex;align-items:center;gap:7px;}
+.hint-bar.good{border-color:rgba(0,229,200,.3);color:#00E5C8;background:rgba(0,229,200,.04);}
+.hint-bar.bad{border-color:rgba(255,68,80,.3);color:#ff8a94;background:rgba(255,68,80,.04);}
+
+.prog-row{display:flex;align-items:center;gap:10px;margin-bottom:12px;}
+.prog-lbl{font-size:11px;color:#444;white-space:nowrap;}
+.prog-track{flex:1;height:4px;background:#1e1e26;border-radius:2px;overflow:hidden;}
+.prog-fill{height:100%;background:#00E5C8;border-radius:2px;width:0%;transition:width .4s;}
+.prog-val{font-size:11px;color:#00E5C8;font-weight:600;min-width:32px;text-align:right;}
+.reset-link{font-size:11px;color:#444;cursor:pointer;background:none;border:none;font-family:'Inter',sans-serif;text-decoration:underline;}
+.reset-link:hover{color:#6e9fff;}
+
+.two-col{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px;}
+
+.task-item{background:#111113;border:1px solid rgba(23,95,255,.18);border-radius:8px;padding:9px 11px;margin-bottom:7px;cursor:grab;transition:all .18s;}
+.task-item:last-child{margin-bottom:0;}
+.task-item:hover{border-color:#175FFF;background:rgba(23,95,255,.06);}
+.task-item.placed{opacity:.25;pointer-events:none;border-color:rgba(0,229,200,.25);}
+.task-item.dragging{opacity:.35;}
+.task-badge{display:inline-block;background:rgba(23,95,255,.12);color:#6e9fff;font-size:10px;font-weight:600;padding:1px 7px;border-radius:4px;margin-bottom:4px;}
+.task-text{font-size:12px;color:#c8c8d4;line-height:1.5;}
+.task-item.pulse{animation:pulse 1s ease 3;}
+@keyframes pulse{0%,100%{box-shadow:none;}50%{box-shadow:0 0 0 3px rgba(23,95,255,.2);}}
+
+.phase-drop{border:1.5px dashed #252530;border-radius:8px;padding:11px;margin-bottom:7px;min-height:66px;transition:all .22s;display:flex;flex-direction:column;gap:4px;}
+.phase-drop:last-child{margin-bottom:0;}
+.phase-drop.hover{border-color:#175FFF;background:rgba(23,95,255,.05);}
+.phase-drop.correct{border-style:solid;border-color:rgba(0,229,200,.4);background:rgba(0,229,200,.04);}
+.phase-drop.wrong{border-style:solid;border-color:rgba(255,68,80,.4);animation:shake .25s;}
+@keyframes shake{0%,100%{transform:translateX(0);}30%{transform:translateX(-4px);}70%{transform:translateX(4px);}}
+.phase-num{font-size:10px;color:#444;font-weight:500;}
+.phase-name{font-size:12px;font-weight:600;color:#F6F3F0;}
+.phase-desc{font-size:11px;color:#555;line-height:1.45;}
+.phase-hint{font-size:11px;color:#2e2e3a;font-style:italic;}
+.phase-placed{background:rgba(0,229,200,.08);border:1px solid rgba(0,229,200,.2);border-radius:5px;padding:4px 7px;font-size:11px;color:#00E5C8;margin-top:2px;}
+
+.result-card{display:none;margin-bottom:12px;}
+.result-card.show{display:block;animation:fadeUp .3s ease;}
+@keyframes fadeUp{from{opacity:0;transform:translateY(5px);}to{opacity:1;transform:none;}}
+.result-row{display:flex;align-items:flex-start;gap:8px;padding:7px 0;border-bottom:1px solid #1a1a22;}
+.result-row:last-child{border-bottom:none;}
+.result-dot{width:5px;height:5px;border-radius:50%;background:#00E5C8;flex-shrink:0;margin-top:5px;}
+.result-text{font-size:12px;color:#6b6b7a;line-height:1.6;}
+.result-text strong{color:#c8c8d4;}
+
+.primary-btn{width:100%;background:#175FFF;color:#fff;border:none;padding:9px;border-radius:8px;font-size:13px;font-weight:600;cursor:pointer;font-family:'Inter',sans-serif;transition:background .15s;margin-top:9px;}
+.primary-btn:hover{background:#1249cc;}
+.primary-btn:disabled{opacity:.3;cursor:not-allowed;}
+
+select{width:100%;background:#111113;border:1px solid #252530;color:#F6F3F0;padding:8px 10px;border-radius:8px;font-family:'Inter',sans-serif;font-size:13px;cursor:pointer;margin-bottom:9px;outline:none;}
+select:focus{border-color:#175FFF;}
+
+input[type=range]{width:100%;-webkit-appearance:none;height:3px;background:#1e1e26;border-radius:2px;outline:none;cursor:pointer;}
+input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:16px;height:16px;border-radius:50%;background:#175FFF;cursor:pointer;border:2px solid #111113;box-shadow:0 1px 4px rgba(0,0,0,.4);}
+input[type=range].lit::-webkit-slider-thumb{background:#00E5C8;}
+.range-labels{display:flex;justify-content:space-between;font-size:10px;color:#444;margin-top:4px;}
+
+.out-box{background:#0d0d10;border:1px solid #1e1e26;border-radius:8px;padding:11px 13px;min-height:100px;font-size:12px;color:#6b6b7a;line-height:1.7;transition:all .25s;white-space:pre-wrap;word-break:break-word;}
+.out-box.active{border-color:rgba(0,229,200,.35);color:#c8c8d4;}
+.out-box.warn{border-color:rgba(255,170,30,.3);color:#c8a040;}
+.out-box.error{border-color:rgba(255,68,80,.3);color:#ff8a94;}
+.out-note{font-size:10px;color:#444;margin-top:6px;}
+
+.metrics{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-top:10px;}
+.metric{background:#111113;border:1px solid #1e1e26;border-radius:8px;padding:9px;text-align:center;}
+.metric-val{font-size:15px;font-weight:700;color:#2e2e3a;margin-bottom:2px;transition:color .4s;}
+.metric-val.on{color:#00E5C8;}
+.metric-lbl{font-size:10px;color:#444;}
+
+.brain-wrap{width:110px;height:110px;position:relative;margin:6px auto 10px;display:flex;align-items:center;justify-content:center;}
+.brain-core{width:58px;height:58px;border-radius:50%;background:rgba(23,95,255,.12);border:2px solid rgba(23,95,255,.25);display:flex;align-items:center;justify-content:center;font-size:22px;z-index:2;position:relative;transition:all .4s;}
+.brain-core.on{border-color:rgba(0,229,200,.5);background:rgba(0,229,200,.08);}
+.orbit{position:absolute;border-radius:50%;border:1px solid rgba(23,95,255,.12);top:50%;left:50%;transform:translate(-50%,-50%);transition:border-color .4s;}
+.orbit.on{border-color:rgba(0,229,200,.25);}
+.o1{width:80px;height:80px;}.o2{width:106px;height:106px;}
+.nd{position:absolute;width:5px;height:5px;border-radius:50%;background:rgba(23,95,255,.35);transition:background .4s;}
+.nd.on{background:#00E5C8;}
+
+.pipe-row{display:flex;gap:0;margin-bottom:10px;}
+.p-stage{flex:1;background:#161619;border:1px solid #1e1e26;padding:10px 6px;cursor:pointer;transition:all .2s;border-right:none;text-align:center;}
+.p-stage:first-child{border-radius:10px 0 0 10px;}.p-stage:last-child{border-radius:0 10px 10px 0;border-right:1px solid #1e1e26;}
+.p-stage:hover{background:rgba(23,95,255,.06);border-color:rgba(23,95,255,.25);}
+.p-stage.correct{background:rgba(0,229,200,.05);border-color:rgba(0,229,200,.35)!important;}
+.p-stage.wrong{animation:shake .25s;border-color:rgba(255,68,80,.35)!important;background:rgba(255,68,80,.05);}
+.p-stage.dimmed{opacity:.22;pointer-events:none;}
+.ps-ico{font-size:16px;margin-bottom:4px;}.ps-name{font-size:10px;font-weight:600;color:#c8c8d4;line-height:1.3;}.ps-sub{font-size:9px;color:#444;margin-top:1px;}
+
+.err-banner{background:rgba(255,68,80,.06);border:1px solid rgba(255,68,80,.25);border-radius:10px;padding:11px 13px;margin-bottom:10px;}
+.err-label{font-size:11px;font-weight:600;color:#ff8a94;margin-bottom:3px;display:flex;align-items:center;gap:5px;}
+.err-dot{width:7px;height:7px;border-radius:50%;background:#ff4450;animation:blink 1.2s infinite;flex-shrink:0;}
+@keyframes blink{0%,100%{opacity:1;}50%{opacity:.2;}}
+.err-text{font-size:12px;color:#ff8a94;line-height:1.6;}
+
+.analogy-row{display:grid;grid-template-columns:repeat(5,1fr);gap:5px;margin-top:9px;}
+.an-item{background:#111113;border:1px solid #1e1e26;border-radius:8px;padding:8px 4px;text-align:center;}
+.an-ico{font-size:14px;margin-bottom:3px;}.an-stage{font-size:9px;color:#00E5C8;font-weight:500;margin-bottom:2px;}.an-name{font-size:10px;font-weight:500;color:#c8c8d4;line-height:1.2;}.an-sub{font-size:9px;color:#444;margin-top:1px;}
+
+.stage-tabs{display:flex;gap:0;margin-bottom:10px;overflow-x:auto;}
+.s-tab{flex:1;min-width:85px;background:#161619;border:1px solid #1e1e26;padding:9px 6px;cursor:pointer;transition:all .18s;border-right:none;text-align:center;}
+.s-tab:first-child{border-radius:9px 0 0 9px;}.s-tab:last-child{border-radius:0 9px 9px 0;border-right:1px solid #1e1e26;}
+.s-tab:hover{background:rgba(23,95,255,.06);}.s-tab.active{background:rgba(23,95,255,.1);border-color:rgba(23,95,255,.35);z-index:1;position:relative;}
+.s-tab .si{font-size:16px;margin-bottom:3px;}.s-tab .sn{font-size:9px;color:#444;margin-bottom:1px;}.s-tab .st{font-size:10px;font-weight:500;color:#6b6b7a;}.s-tab.active .st{color:#6e9fff;}
+
+.path-row{display:flex;align-items:center;gap:3px;margin-bottom:10px;}
+.path-dot{width:22px;height:22px;border-radius:50%;border:1.5px solid #252530;display:flex;align-items:center;justify-content:center;font-size:10px;flex-shrink:0;transition:all .3s;}
+.path-dot.on{border-color:#00E5C8;background:rgba(0,229,200,.08);}
+.path-line{flex:1;height:1px;background:#1e1e26;transition:background .3s;}.path-line.on{background:#00E5C8;}
+
+.stage-badge{display:inline-block;background:rgba(23,95,255,.12);border:1px solid rgba(23,95,255,.2);color:#6e9fff;font-size:10px;font-weight:500;padding:2px 8px;border-radius:4px;margin-bottom:6px;}
+.stage-badge.good{background:rgba(0,229,200,.1);border-color:rgba(0,229,200,.2);color:#00E5C8;}
+.stage-name{font-size:13px;font-weight:600;color:#F6F3F0;margin-bottom:4px;}
+.stage-desc{font-size:12px;color:#6b6b7a;line-height:1.6;margin-bottom:7px;}
+.stat-pills{display:flex;flex-wrap:wrap;gap:5px;}
+.stat-pill{background:#111113;border:1px solid #252530;border-radius:5px;padding:3px 8px;font-size:10px;color:#555;}
+.stat-pill.ok{border-color:rgba(0,229,200,.25);color:#00E5C8;}
+
+.tog-row{display:flex;align-items:center;justify-content:space-between;background:#111113;border:1px solid #252530;border-radius:8px;padding:9px 11px;margin-bottom:7px;cursor:pointer;transition:all .18s;}
+.tog-row:hover{border-color:rgba(23,95,255,.3);}.tog-row.on{background:rgba(0,229,200,.04);border-color:rgba(0,229,200,.25);}
+.tog-left{flex:1;min-width:0;}
+.tog-name{font-size:12px;font-weight:500;color:#F6F3F0;}.tog-sub{font-size:10px;color:#444;margin-top:1px;}
+.tog-sw{width:30px;height:17px;background:#252530;border-radius:9px;position:relative;flex-shrink:0;transition:background .25s;}
+.tog-sw::after{content:'';position:absolute;width:12px;height:12px;border-radius:50%;background:#444;top:2.5px;left:2.5px;transition:left .25s;}
+.tog-row.on .tog-sw{background:#00E5C8;}.tog-row.on .tog-sw::after{left:15.5px;background:#111113;}
+
+.token-chip{display:inline-block;background:rgba(23,95,255,.08);border:1px solid rgba(23,95,255,.18);color:#6e9fff;font-size:10px;padding:2px 7px;border-radius:5px;margin:2px;transition:all .25s;}
+.token-chip small{font-size:9px;color:#444;display:block;text-align:center;}
+.token-chip.on{background:rgba(0,229,200,.08);border-color:rgba(0,229,200,.25);color:#00E5C8;}
+
+.t3-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-top:10px;}
+.t3-card{background:#111113;border:1px solid #1e1e26;border-radius:9px;padding:12px;text-align:center;transition:all .25s;}
+.t3-card.on{background:rgba(0,229,200,.04);border-color:rgba(0,229,200,.2);}
+.t3-ico{font-size:20px;margin-bottom:6px;}.t3-tag{font-size:9px;color:#444;font-weight:600;margin-bottom:3px;}.t3-name{font-size:12px;font-weight:600;color:#F6F3F0;margin-bottom:4px;}.t3-desc{font-size:11px;color:#555;line-height:1.55;}
+
+.poll-row{display:flex;align-items:center;justify-content:space-between;background:#111113;border:1px solid #252530;border-radius:8px;padding:8px 11px;margin-bottom:6px;cursor:pointer;font-size:12px;color:#8a8a9a;transition:all .18s;gap:8px;}
+.poll-row:hover{border-color:rgba(23,95,255,.3);}.poll-row.voted{pointer-events:none;}
+.poll-right{display:flex;align-items:center;gap:6px;flex-shrink:0;}
+.poll-track{width:60px;height:3px;background:#1e1e26;border-radius:2px;overflow:hidden;}
+.poll-fill{height:100%;background:#175FFF;border-radius:2px;transition:width .4s;width:0%;}
+.poll-pct{font-size:10px;color:#555;min-width:26px;text-align:right;}
+.poll-result{font-size:12px;color:#00E5C8;background:rgba(0,229,200,.05);border:1px solid rgba(0,229,200,.18);border-radius:7px;padding:8px 11px;margin-top:7px;line-height:1.6;display:none;}
+
+.pf-flow{display:flex;gap:0;margin-bottom:10px;background:#161619;border:1px solid #1e1e26;border-radius:10px;overflow:hidden;}
+.pf-s{flex:1;padding:9px 7px;text-align:center;border-right:1px solid #1e1e26;transition:all .25s;}
+.pf-s:last-child{border-right:none;}
+.pf-s.on{background:rgba(0,229,200,.05);border-bottom:2px solid rgba(0,229,200,.4);}
+.pf-ico{font-size:15px;margin-bottom:3px;}.pf-lbl{font-size:10px;color:#444;font-weight:500;}
+.pf-s.on .pf-lbl{color:#00E5C8;}
+
+.quiz-wrap{background:#161619;border:1px solid #1e1e26;border-radius:12px;padding:14px 16px;margin-bottom:16px;transition:border-color .25s;}
+.quiz-wrap.highlight{border-color:rgba(23,95,255,.45);box-shadow:0 0 0 2px rgba(23,95,255,.08);}
+.quiz-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:11px;}
+.quiz-label{font-size:12px;font-weight:600;color:#F6F3F0;}
+.quiz-score{font-size:12px;color:#444;}
+.quiz-q{font-size:13px;font-weight:500;color:#F6F3F0;line-height:1.5;margin-bottom:10px;}
+.quiz-opts{display:grid;grid-template-columns:1fr 1fr;gap:6px;}
+.opt-btn{background:#111113;border:1px solid #252530;color:#8a8a9a;padding:9px 11px;border-radius:8px;cursor:pointer;font-family:'Inter',sans-serif;font-size:12px;text-align:left;transition:all .18s;line-height:1.4;}
+.opt-btn:hover{border-color:rgba(23,95,255,.35);color:#c8c8d4;}
+.opt-btn.correct{border-color:rgba(0,229,200,.4);background:rgba(0,229,200,.05);color:#00E5C8;}
+.opt-btn.wrong{border-color:rgba(255,68,80,.35);background:rgba(255,68,80,.05);color:#ff8a94;}
+.quiz-fb{margin-top:9px;font-size:12px;color:#555;line-height:1.6;}
+.quiz-fb.ok{color:#00E5C8;}
+.next-btn{margin-top:8px;background:transparent;border:1px solid #252530;color:#444;padding:6px 13px;border-radius:6px;font-size:11px;cursor:pointer;font-family:'Inter',sans-serif;display:none;transition:all .18s;}
+.next-btn:hover{border-color:#175FFF;color:#6e9fff;}
+
+.cot-block{border-left:2px solid rgba(0,229,200,.3);padding-left:9px;margin-bottom:6px;}
+.cot-step{font-size:10px;color:#444;margin-bottom:2px;}.cot-step span{color:#00E5C8;}
+
+/* ── AXON RIGHT-COLUMN BOT ── */
+.axon-widget{
+  position:sticky;
+  top:90px;
+  width:200px;
+}
+.axon-avatar{
+  width:36px;height:36px;
+  background:linear-gradient(135deg,#175FFF,#0a3acc);
+  border-radius:50%;
+  display:flex;align-items:center;justify-content:center;
+  font-size:16px;
+  box-shadow:0 2px 10px rgba(23,95,255,.4);
+  animation:axonFloat 2.5s ease-in-out infinite;
+  cursor:pointer;
+  margin-bottom:8px;
+}
+@keyframes axonFloat{0%,100%{transform:translateY(0);}50%{transform:translateY(-4px);}}
+.axon-bubble{
+  background:#161619;
+  border:1px solid rgba(23,95,255,.4);
+  border-radius:4px 12px 12px 12px;
+  padding:10px 12px;
+  box-shadow:0 4px 16px rgba(0,0,0,.5);
+  opacity:0;
+  transform:scale(.95);
+  transition:opacity .25s,transform .25s;
+  pointer-events:none;
+}
+.axon-bubble.show{opacity:1;transform:scale(1);pointer-events:auto;}
+.axon-name{font-size:10px;font-weight:600;color:#175FFF;margin-bottom:4px;display:flex;align-items:center;gap:4px;}
+.axon-name::before{content:'';width:5px;height:5px;border-radius:50%;background:#00E5C8;display:inline-block;}
+.axon-msg{font-size:11px;color:#c8c8d4;line-height:1.65;}
+.axon-btns{display:flex;flex-direction:column;gap:5px;margin-top:8px;}
+.axon-btn{background:#175FFF;color:#fff;border:none;padding:6px 10px;border-radius:6px;font-size:11px;font-weight:600;cursor:pointer;font-family:'Inter',sans-serif;transition:background .15s;width:100%;text-align:left;}
+.axon-btn:hover{background:#1249cc;}
+.axon-btn.soft{background:transparent;border:1px solid #2a2a34;color:#555;width:100%;}
+.axon-btn.soft:hover{border-color:#175FFF;color:#6e9fff;}
+
+@media(max-width:700px){
+  .layout{grid-template-columns:1fr;}
+  .axon-col{display:none;}
+  .two-col{grid-template-columns:1fr;}
+  .quiz-opts{grid-template-columns:1fr;}
+  .metrics{grid-template-columns:repeat(2,1fr);}
+  .analogy-row{grid-template-columns:repeat(2,1fr);}
+  .t3-grid{grid-template-columns:1fr;}
+  .topbar,.steps{padding-left:14px;padding-right:14px;}
+  .layout{padding:0 14px;}
+}
+
+/* ── AXON column ── */
+.axon-col { width:210px; flex-shrink:0; position:relative; }
+#axonTrack { position:absolute; top:0; left:0; width:210px; bottom:0; pointer-events:none; }
+#axonWidget {
+  position:absolute; left:0; top:0;
+  width:210px;
+  display:flex; flex-direction:column; align-items:center;
+  pointer-events:auto;
+  transition: top 0.7s cubic-bezier(0.34,1.45,0.64,1);
+}
+#axonRobot {
+  width:54px; height:68px; cursor:pointer; display:block;
+  animation: botFloat 2.8s ease-in-out infinite;
+}
+#axonRobot.talk { animation: botTalk 0.22s ease-in-out infinite alternate; }
+@keyframes botFloat { 0%,100%{transform:translateY(0)} 50%{transform:translateY(-8px)} }
+@keyframes botTalk  { 0%{transform:translateY(0) rotate(-1.5deg)} 100%{transform:translateY(-3px) rotate(1.5deg)} }
+#axonBubble {
+  background:#161619;
+  border:1px solid rgba(23,95,255,.45);
+  border-radius:4px 14px 14px 14px;
+  padding:11px 13px; width:206px;
+  margin-top:7px;
+  box-shadow:0 4px 16px rgba(0,0,0,.55);
+  opacity:0; transform:scale(.95) translateY(-4px);
+  transition:opacity .22s, transform .22s;
+  pointer-events:none;
+}
+#axonBubble.vis { opacity:1; transform:scale(1) translateY(0); pointer-events:auto; }
+.ax-name {
+  font-size:10px; font-weight:600; color:#175FFF;
+  margin-bottom:5px; display:flex; align-items:center; gap:5px;
+}
+.ax-dot { width:6px; height:6px; border-radius:50%; background:#00E5C8; display:inline-block; flex-shrink:0; }
+#axonMsg { font-size:11.5px; color:#c8c8d4; line-height:1.65; }
+#axonBtns { display:flex; flex-direction:column; gap:5px; margin-top:9px; }
+.axon-btn {
+  background:#175FFF; color:#fff; border:none;
+  padding:6px 11px; border-radius:6px;
+  font-size:11px; font-weight:600; cursor:pointer;
+  font-family:'Inter',sans-serif; width:100%;
+  text-align:left; display:block;
+  transition:background .15s;
+}
+.axon-btn:hover { background:#1249cc; }
+.axon-btn.soft { background:transparent; border:1px solid #2a2a34; color:#6b6b7a; }
+.axon-btn.soft:hover { border-color:#175FFF; color:#6e9fff; }
+@media(max-width:700px){ .axon-col{display:none;} }
+.pf-flow{display:flex;gap:0;margin-bottom:10px;background:#161619;border:1px solid #1e1e26;border-radius:10px;overflow:hidden;}.pf-s{flex:1;padding:9px 7px;text-align:center;border-right:1px solid #1e1e26;transition:all .25s;}.pf-s:last-child{border-right:none;}.pf-s.on{background:rgba(0,229,200,.05);border-bottom:2px solid rgba(0,229,200,.4);}.pf-ico{font-size:15px;margin-bottom:3px;}.pf-lbl{font-size:10px;color:#444;font-weight:500;}.pf-s.on .pf-lbl{color:#00E5C8;}</style>
+</head><body>
+<div class="topbar"><div class="brand"><div class="brand-dot">D</div><div><div class="brand-name">Deccan AI Experts</div><div class="brand-sub">Interactive Learning Lab</div></div></div><div class="mod-pill">Module 4 · Pre-Training Deep Dive</div></div>
+<div class="steps"><div class="step"><div class="step-num active" id="sn0">1</div><span class="step-lbl active" id="sl0">Learn</span></div><div class="step-line" id="sl-0"></div><div class="step"><div class="step-num" id="sn1">2</div><span class="step-lbl" id="sl1">Tokeniser</span></div><div class="step-line" id="sl-1"></div><div class="step"><div class="step-num" id="sn2">3</div><span class="step-lbl" id="sl2">Attention</span></div><div class="step-line" id="sl-2"></div><div class="step"><div class="step-num" id="sn3">4</div><span class="step-lbl" id="sl3">Safety</span></div><div class="step-line" id="sl-3"></div><div class="step"><div class="step-num" id="sn4">5</div><span class="step-lbl" id="sl4">Quiz</span></div></div>
+<div id="mainPage" style="max-width:900px;margin:0 auto;padding:0 24px;display:flex;gap:20px;align-items:flex-start;">
+<div style="flex:1;min-width:0;padding:18px 0 80px;">
+
+  <div class="hero" id="heroSection"><div class="hero-tag">Module 4</div><h1>Pre-Training<br><span>Under the Microscope</span></h1><p>Toggle the three system flags one at a time. Skip the safety one — and watch the model leak a real password.</p></div>
+  <div class="card info-card" id="conceptCard"><div class="info-icon">🔐</div><div class="info-body"><h3>What the video covered</h3><p>Pre-training has four sub-phases: <strong>Data Collection & Cleaning</strong> (removing noise, banners, duplicates) → <strong>Tokenization</strong> (text to numerical IDs) → <strong>Training</strong> (Encoder reads, Attention focuses, Decoder writes) → <strong>Testing & Evaluation</strong> (quality, correctness, safety/PII).</p></div></div>
+  <div class="reveal" id="simArea">
+    <div class="pf-flow"><div class="pf-s" id="pf0"><div class="pf-ico">📥</div><div class="pf-lbl">Data cleaning</div></div><div class="pf-s" id="pf1"><div class="pf-ico">🔢</div><div class="pf-lbl">Tokenisation</div></div><div class="pf-s" id="pf2"><div class="pf-ico">🧠</div><div class="pf-lbl">Core training</div></div><div class="pf-s" id="pf3"><div class="pf-ico">🛡️</div><div class="pf-lbl">Testing & eval</div></div></div>
+    <div style="display:grid;grid-template-columns:148px 1fr 1fr;gap:10px;margin-bottom:10px;">
+      <div class="card" id="flagsCard"><div class="card-label">System flags</div>
+        <div class="tog-row" id="t0" onclick="tog(0)" style="opacity:.35;pointer-events:none;"><div class="tog-left"><div class="tog-name">Tokeniser</div><div class="tog-sub">Text → token IDs</div></div><div class="tog-sw"></div></div>
+        <div class="tog-row" id="t1" onclick="tog(1)" style="opacity:.35;pointer-events:none;"><div class="tog-left"><div class="tog-name">Attention</div><div class="tog-sub">Context focus</div></div><div class="tog-sw"></div></div>
+        <div class="tog-row" id="t2" onclick="tog(2)" style="opacity:.35;pointer-events:none;"><div class="tog-left"><div class="tog-name">Safety guardrails</div><div class="tog-sub">Block sensitive data</div></div><div class="tog-sw"></div></div>
+        <div style="margin-top:7px;background:#111113;border:1px solid #252530;border-radius:7px;padding:7px 9px;font-size:10px;color:#444;line-height:1.8;">Active:<br><span id="fState" style="color:#c8c8d4;font-weight:500;">None yet</span></div>
+      </div>
+      <div class="card" id="inputCard"><div class="card-label">Validation scenario</div>
+        <div style="background:#111113;border:1px solid #252530;border-radius:7px;padding:9px;margin-bottom:8px;"><div style="font-size:13px;color:#F6F3F0;margin-bottom:5px;">What is the colour of the sky?</div><div style="font-size:10px;color:#ff8a94;background:rgba(255,68,80,.07);border:1px solid rgba(255,68,80,.18);border-radius:5px;padding:5px 8px;">System note: Do not expose — 'AdminPass123'</div></div>
+        <div style="background:#111113;border:1px solid #252530;border-radius:7px;padding:9px;"><div style="font-size:10px;font-weight:600;color:#444;margin-bottom:5px;">Tokeniser output</div><div id="tokWrap"><span class="token-chip" data-id="2061">What<small>—</small></span><span class="token-chip" data-id="318">is<small>—</small></span><span class="token-chip" data-id="262">the<small>—</small></span><span class="token-chip" data-id="3124">colour<small>—</small></span><span class="token-chip" data-id="286">of<small>—</small></span><span class="token-chip" data-id="262">the<small>—</small></span><span class="token-chip" data-id="6766">sky<small>—</small></span><span class="token-chip" data-id="30">?<small>—</small></span></div></div>
+      </div>
+      <div class="card" id="diagCard"><div class="card-label">Live diagnostic</div><div class="out-box" id="diagBox"><span style="color:#2e2e3a;font-size:11px;">Enable the flags to begin.</span></div><div class="out-note" id="diagStat">Waiting…</div></div>
+    </div>
+    <div class="card reveal" id="transformerCard"><div class="card-label">Transformer architecture from the video</div><div class="t3-grid"><div class="t3-card" id="tc0"><div class="t3-ico">📖</div><div class="t3-tag">Component 1</div><div class="t3-name">Encoder — the reader</div><div class="t3-desc">Scans the entire token sequence and builds a mathematical meaning map of the input.</div></div><div class="t3-card" id="tc1"><div class="t3-ico">🔦</div><div class="t3-tag">Component 2</div><div class="t3-name">Attention — the spotlight</div><div class="t3-desc">Focuses on the most relevant tokens — e.g. "colour" and "sky" — to understand the intent.</div></div><div class="t3-card" id="tc2"><div class="t3-ico">✍️</div><div class="t3-tag">Component 3</div><div class="t3-name">Decoder — the writer</div><div class="t3-desc">Generates the answer one token at a time: "The" → "sky" → "is" → "blue." Each token informs the next.</div></div></div></div>
+  </div>
+  <div class="quiz-wrap reveal" id="quizWrap"><div class="quiz-header"><span class="quiz-label">Check your understanding</span><span class="quiz-score" id="qs">0 / 5</span></div><div class="quiz-q" id="qq"></div><div class="quiz-opts" id="qo"></div><div class="quiz-fb" id="qfb"></div><button class="next-btn" id="qnext" onclick="nextQ()">Next →</button></div>
+
+</div>
+
+<div class="axon-col">
+  <div id="axonTrack">
+    <div id="axonWidget">
+      <!-- SVG ROBOT -->
+      <svg id="axonRobot" viewBox="0 0 54 68" fill="none" xmlns="http://www.w3.org/2000/svg" onclick="toggleAxon()">
+        <line x1="27" y1="1" x2="27" y2="9" stroke="#175FFF" stroke-width="2.2" stroke-linecap="round"/>
+        <circle cx="27" cy="1" r="3" fill="#00E5C8"/>
+        <rect x="10" y="9" width="34" height="23" rx="7" fill="#1c1c2e" stroke="#175FFF" stroke-width="1.5"/>
+        <rect x="15" y="15" width="9" height="7" rx="2.5" fill="#175FFF"/>
+        <rect x="16.5" y="16.5" width="3.5" height="2.5" rx="1.2" fill="#00E5C8"/>
+        <rect x="30" y="15" width="9" height="7" rx="2.5" fill="#175FFF"/>
+        <rect x="31.5" y="16.5" width="3.5" height="2.5" rx="1.2" fill="#00E5C8"/>
+        <path d="M19 27 Q27 30 35 27" stroke="#175FFF" stroke-width="1.5" fill="none" stroke-linecap="round"/>
+        <rect x="23" y="32" width="8" height="5" rx="1.5" fill="#252545"/>
+        <rect x="8" y="37" width="38" height="23" rx="7" fill="#1c1c2e" stroke="#175FFF" stroke-width="1.5"/>
+        <circle cx="27" cy="49" r="5" fill="rgba(23,95,255,0.2)" stroke="#175FFF" stroke-width="1"/>
+        <circle cx="27" cy="49" r="2.5" fill="#00E5C8"/>
+        <rect x="1" y="38" width="7" height="13" rx="3.5" fill="#252545" stroke="#175FFF" stroke-width="1.2"/>
+        <rect x="46" y="38" width="7" height="13" rx="3.5" fill="#252545" stroke="#175FFF" stroke-width="1.2"/>
+        <rect x="13" y="60" width="10" height="8" rx="4" fill="#252545" stroke="#175FFF" stroke-width="1.2"/>
+        <rect x="31" y="60" width="10" height="8" rx="4" fill="#252545" stroke="#175FFF" stroke-width="1.2"/>
+      </svg>
+      <!-- BUBBLE -->
+      <div id="axonBubble">
+        <div class="ax-name"><span class="ax-dot"></span>Axon</div>
+        <div id="axonMsg">Hi! I'm Axon, your guide.</div>
+        <div id="axonBtns"></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+</div>
+<script>
+
+/* ── AXON ── */
+let axonOpen = false;
+
+function flyTo(targetId, msg, btns) {
+  const widget = document.getElementById('axonWidget');
+  const track  = document.getElementById('axonTrack');
+  const target = document.getElementById(targetId);
+  if (!widget || !track || !target) return;
+
+  /* Walk up offsetParent chain to get target's top relative to axonTrack */
+  let top = 0, el = target;
+  while (el && el !== track) {
+    top += el.offsetTop;
+    el   = el.offsetParent;
+  }
+  const max = Math.max(0, track.offsetHeight - 160);
+  widget.style.top = Math.min(Math.max(0, top - 10), max) + 'px';
+
+  speak(msg, btns);
+}
+
+function speak(msg, btns) {
+  document.getElementById('axonMsg').innerHTML = msg;
+  const bb = document.getElementById('axonBtns');
+  bb.innerHTML = '';
+  (btns || []).forEach(b => {
+    const el = document.createElement('button');
+    el.className = 'axon-btn' + (b.soft ? ' soft' : '');
+    el.textContent = b.t;
+    el.onclick = () => { if (window[b.f]) window[b.f](); };
+    bb.appendChild(el);
+  });
+  document.getElementById('axonBubble').classList.add('vis');
+  const r = document.getElementById('axonRobot');
+  if (r) { r.classList.add('talk'); clearTimeout(window._tt); window._tt = setTimeout(()=>r.classList.remove('talk'),1400); }
+  axonOpen = true;
+}
+
+function silence() {
+  document.getElementById('axonBubble').classList.remove('vis');
+  axonOpen = false;
+}
+
+function toggleAxon() {
+  axonOpen ? silence() : document.getElementById('axonBubble').classList.add('vis');
+  axonOpen = !axonOpen;
+}
+
+
+let fl=[false,false,false],qI=0,qS=0;
+function advStep(n){for(let i=0;i<=n;i++){document.getElementById('sn'+i).className='step-num done';document.getElementById('sl'+i).className='step-lbl';if(i<n&&document.getElementById('sl-'+i))document.getElementById('sl-'+i).className='step-line done';}if(n+1<=4){document.getElementById('sn'+(n+1)).className='step-num active';document.getElementById('sl'+(n+1)).className='step-lbl active';}}
+function showEl(id){document.getElementById(id).classList.add('show');}
+function unlock(i){document.getElementById('t'+i).style.opacity='1';document.getElementById('t'+i).style.pointerEvents='auto';}
+function tog(i){fl[i]=!fl[i];document.getElementById('t'+i).classList.toggle('on',fl[i]);upd();
+  if(i===0&&fl[0]){unlock(1);advStep(2);flyTo('inputCard',"The tokeniser is active — words now have numerical IDs. That's the bridge the video described. Now enable Attention.",[{t:"Enabling it",f:"silence"}]);}
+  else if(i===1&&fl[1]&&fl[0]){unlock(2);advStep(3);flyTo('diagCard',"Look at the output — it answered correctly! But the admin password leaked from the system note. Enable Safety guardrails to block it.",[{t:"Turning it on",f:"silence"}]);}
+  else if(i===2&&fl[2]&&fl[0]&&fl[1]){advStep(4);setTimeout(()=>flyTo('flagsCard',"All three flags active. The answer is correct and the credential is blocked. Safety guardrails are not optional in production AI. Ready for the final quiz?",[{t:"Take the quiz!",f:"openQuiz"},{t:"I understand",f:"silence"}]),400);}
+}
+function openQuiz(){silence();showEl('quizWrap');loadQ();setTimeout(()=>flyTo('quizWrap',"Final quiz — all 5 questions come directly from this video.",[{t:"Let's go",f:"silence"}]),300);}
+function upd(){const[tok,att,pii]=fl;const nm=[];if(tok)nm.push('Tokeniser');if(att)nm.push('Attention');if(pii)nm.push('Safety');document.getElementById('fState').textContent=nm.length?nm.join(' · '):'None yet';document.querySelectorAll('.token-chip').forEach(c=>{c.classList.toggle('on',tok);c.querySelector('small').textContent=tok?c.dataset.id:'—';});document.getElementById('pf1').classList.toggle('on',tok);document.getElementById('pf2').classList.toggle('on',att);document.getElementById('pf3').classList.toggle('on',pii);document.getElementById('tc0').classList.toggle('on',tok);document.getElementById('tc1').classList.toggle('on',att);document.getElementById('tc2').classList.toggle('on',tok&&att);if(tok&&att)document.getElementById('transformerCard').classList.add('show');const box=document.getElementById('diagBox');const stat=document.getElementById('diagStat');box.className='out-box';if(!tok&&!att&&!pii){box.innerHTML='<span style="color:#2e2e3a;font-size:11px;">Enable the flags to begin.</span>';stat.textContent='Waiting…';}else if(tok&&!att&&!pii){box.className='out-box warn';box.textContent='Tokenised: [ 2061, 318, 262, 3124, 286, 262, 6766, 30 ]\n\nAttention is off — cannot determine which tokens matter.\nNo answer generated yet.';stat.textContent='Tokenised — enable Attention next';}else if(tok&&att&&!pii){box.className='out-box warn';box.innerHTML='High-attention tokens: "colour" [3124] + "sky" [6766]\n\nOutput: The sky is blue.\n\n<span style="color:#ff8a94;">⚠️ Safety guardrail off — credential leaked:\nAdminPass123\n\nDeployment blocked.</span>';stat.textContent='Answer correct — credential leaked!';}else if(tok&&att&&pii){box.className='out-box active';box.textContent='High-attention tokens: "colour" [3124] + "sky" [6766]\n\nOutput: The sky is blue.\n\nSafety guardrail active — credential redacted ✓\nAll evaluation checks passed ✓';stat.textContent='Safe and correct ✓';}else if(!tok){box.className='out-box error';box.textContent=(att?'Attention':'Safety')+' needs the Tokeniser first.\nEnable the Tokeniser before this flag.';stat.textContent='Enable Tokeniser first';}}
+const Qs=[
+  {
+    q:"The video describes raw web data as 'highly polluted'. Which of these is specifically mentioned as an example of noise that needs to be removed?",
+    opts:["Grammar errors in articles","Cookie compliance banners and newsletter subscription overlays","Duplicate author names","Images embedded in web pages"],
+    ans:1,
+    exp:"The video specifically calls out cookie banners, newsletter overlays, and promotional trackers as junk content that automated cleaning scripts strip from raw web data."
+  },
+  {
+    q:"Why can't the LLM process the sentence 'Hello world!' directly as text?",
+    opts:["LLMs only understand structured data","The sentence is too short to be meaningful","LLMs perform mathematical operations — text must first be converted into numerical token IDs","The model needs to translate it to English first"],
+    ans:2,
+    exp:"LLMs are mathematical systems. Tokenization acts as a bridge — splitting 'Hello world!' into sub-word units and mapping each to a unique numerical ID so the model can compute on it."
+  },
+  {
+    q:"In the Transformer architecture, the Attention mechanism is described as a 'spotlight'. What does it spotlight?",
+    opts:["The longest tokens in the sequence","High-value tokens that are most relevant to the current prediction, like 'colour' and 'sky'","The first and last tokens of every sentence","Tokens that contain numbers or special characters"],
+    ans:1,
+    exp:"Attention assigns higher weights to contextually important tokens. For 'What is the colour of the sky?', it focuses on 'colour' and 'sky' because those are the key concepts that drive the answer."
+  },
+  {
+    q:"The Decoder generates output 'auto-regressively'. What does this mean in practice?",
+    opts:["It generates all tokens at the same time in parallel","It generates one token at a time, using previous tokens to inform the next","It copies tokens directly from the training data","It asks the user to confirm each token before proceeding"],
+    ans:1,
+    exp:"Auto-regressive generation means the Decoder produces one token at a time — 'The', then 'sky', then 'is', then 'blue' — with each new token conditioned on everything generated so far."
+  },
+  {
+    q:"The video lists three types of tests during evaluation. Which of these is NOT one of them?",
+    opts:["Quality metrics (tone, vocabulary, coherence)","Functional correctness (following instructions, output format accuracy)","User satisfaction surveys (polling real users)","Safety constraints (blocking toxic outputs, protecting PII)"],
+    ans:2,
+    exp:"The video covers quality metrics, functional correctness, and safety constraints. User satisfaction surveys aren't part of the automated evaluation pipeline described."
+  }
+];
+
+function loadQ(){const q=Qs[qI];document.getElementById('qq').textContent=(qI+1)+'. '+q.q;document.getElementById('qfb').textContent='';document.getElementById('qfb').className='quiz-fb';document.getElementById('qnext').style.display='none';const opts=document.getElementById('qo');opts.innerHTML='';q.opts.forEach((o,i)=>{const b=document.createElement('button');b.className='opt-btn';b.textContent=o;b.onclick=()=>{document.querySelectorAll('.opt-btn').forEach(x=>x.onclick=null);const fb=document.getElementById('qfb');if(i===q.ans){b.classList.add('correct');qS++;fb.textContent=q.exp;fb.className='quiz-fb ok';flyTo('quizWrap','✅ '+q.exp,[{t:Qs.length-1>qI?"Next →":"Finish",f:Qs.length-1>qI?"nextA":"finishQuiz"}]);}else{b.classList.add('wrong');document.querySelectorAll('.opt-btn')[q.ans].classList.add('correct');fb.textContent=q.exp;flyTo('quizWrap',q.exp,[{t:Qs.length-1>qI?"Next →":"Finish",f:Qs.length-1>qI?"nextA":"finishQuiz"}]);}document.getElementById('qs').textContent=qS+' / '+Qs.length;};opts.appendChild(b);});}
+function nextA(){silence();qI++;loadQ();}
+function nextQ(){qI++;loadQ();}
+function finishQuiz(){silence();const ms=["Re-watch the video — focus on data cleaning and the Transformer.","Good work! Review the concept card once more.","Outstanding — pre-training deep dive mastered. Course complete! 🎓"];setTimeout(()=>flyTo('quizWrap','Course complete! You scored '+qS+'/'+Qs.length+'. '+ms[qS<3?0:qS<5?1:2],[{t:"Thanks Axon! 🙌",f:"silence"}]),200);}
+loadQ();upd();
+window.addEventListener('load',()=>setTimeout(()=>flyTo('heroSection',"Welcome to the final module! This video zooms into pre-training itself. Read the concept card — then I'll unlock the simulation where you'll enable flags one by one.",[{t:"Show me the sim",f:"startSim"}]),500));
+function startSim(){showEl('simArea');unlock(0);advStep(1);setTimeout(()=>flyTo('flagsCard',"Start by enabling the Tokeniser. The video explained this first — it converts raw text into numerical token IDs so the model can compute on it.",[{t:"Enabling it",f:"silence"}]),350);}
+
+</script>
+</body></html>
