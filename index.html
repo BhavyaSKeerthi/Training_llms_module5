@@ -1,486 +1,633 @@
 <!DOCTYPE html><html lang="en"><head>
 <meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0">
 <title>Deccan AI | Pre-Training Deep Dive</title>
-<style>@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
 *{margin:0;padding:0;box-sizing:border-box;}
-body{font-family:'Inter',sans-serif;background:#111113;color:#F6F3F0;min-height:100vh;font-size:14px;}
+:root{
+  --bg:#111113;--card:#161619;--line:#1e1e26;--text:#F6F3F0;--muted:#6b6b7a;
+  --blue:#175FFF;--blue-d:#1142a8;--cyan:#00E5C8;--gold:#FFC93C;--red:#ff4450;--purple:#9d6bff;
+}
+body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--text);min-height:100vh;font-size:14px;padding-bottom:170px;}
 
-.topbar{background:#111113;border-bottom:1px solid #1e1e26;padding:12px 24px;display:flex;align-items:center;justify-content:space-between;position:sticky;top:0;z-index:100;}
+/* ───────────── TOP BAR ───────────── */
+.topbar{background:var(--bg);border-bottom:1px solid var(--line);padding:12px 24px;display:flex;align-items:center;justify-content:space-between;position:sticky;top:0;z-index:1200;}
 .brand{display:flex;align-items:center;gap:9px;}
-.brand-dot{width:28px;height:28px;background:#175FFF;border-radius:7px;display:flex;align-items:center;justify-content:center;color:#fff;font-weight:700;font-size:12px;flex-shrink:0;}
-.brand-name{font-size:13px;font-weight:600;color:#F6F3F0;}
+.brand-dot{width:28px;height:28px;background:var(--blue);border-radius:7px;display:flex;align-items:center;justify-content:center;color:#fff;font-weight:700;font-size:12px;flex-shrink:0;}
+.brand-name{font-size:13px;font-weight:600;}
 .brand-sub{font-size:10px;color:#555;margin-top:1px;}
 .mod-pill{background:rgba(23,95,255,.12);border:1px solid rgba(23,95,255,.25);color:#6e9fff;font-size:11px;font-weight:500;padding:4px 11px;border-radius:20px;}
 
-.steps{max-width:900px;margin:18px auto 0;padding:0 24px;display:flex;align-items:center;}
+/* ───────────── HUD ───────────── */
+.hud{max-width:900px;margin:12px auto 0;padding:0 24px;display:flex;align-items:center;gap:14px;flex-wrap:wrap;position:relative;z-index:1000;}
+.hud-chip{display:flex;align-items:center;gap:6px;background:var(--card);border:1px solid var(--line);border-radius:20px;padding:5px 12px;font-size:12px;font-weight:600;}
+.hearts{gap:3px;}
+.heart{font-size:14px;line-height:1;transition:transform .3s,filter .3s,opacity .3s;}
+.heart.lost{filter:grayscale(1) brightness(.5);opacity:.45;transform:scale(.8);}
+.heart.pop{animation:heartPop .45s ease;}
+@keyframes heartPop{0%{transform:scale(1)}40%{transform:scale(1.5)}100%{transform:scale(.8)}}
+.streak{color:var(--gold);}
+.streak .flame{font-size:14px;display:inline-block;}
+.streak.lit .flame{animation:flicker .7s ease-in-out infinite;}
+@keyframes flicker{0%,100%{transform:scale(1) rotate(-3deg);filter:drop-shadow(0 0 3px var(--gold))}50%{transform:scale(1.18) rotate(3deg);filter:drop-shadow(0 0 8px var(--gold))}}
+.xp-chip{flex:1;min-width:150px;gap:9px;}
+.xp-track{flex:1;height:7px;background:#0c0c0f;border-radius:4px;overflow:hidden;box-shadow:inset 0 1px 2px rgba(0,0,0,.5);}
+.xp-fill{height:100%;width:0%;background:linear-gradient(90deg,var(--cyan),var(--blue));border-radius:4px;transition:width .6s cubic-bezier(.16,1,.3,1);}
+.xp-val{color:var(--cyan);min-width:54px;text-align:right;font-variant-numeric:tabular-nums;}
+.lvl{color:var(--purple);background:rgba(157,107,255,.1);border-color:rgba(157,107,255,.3);}
+.lvl.bump{animation:lvlBump .6s ease;}
+@keyframes lvlBump{0%{transform:scale(1)}40%{transform:scale(1.35);background:rgba(157,107,255,.35)}100%{transform:scale(1)}}
+
+/* ───────────── STEP RAIL ───────────── */
+.steps{max-width:900px;margin:14px auto 0;padding:0 24px;display:flex;align-items:center;position:relative;z-index:1000;}
 .step{display:flex;align-items:center;gap:6px;flex:1;min-width:0;}
-.step-num{width:22px;height:22px;border-radius:50%;border:1.5px solid #2a2a34;display:flex;align-items:center;justify-content:center;font-size:10px;color:#444;flex-shrink:0;transition:all .3s;}
-.step-num.active{border-color:#175FFF;color:#6e9fff;background:rgba(23,95,255,.1);}
-.step-num.done{border-color:#00E5C8;background:rgba(0,229,200,.12);color:#00E5C8;}
+.step-num{width:24px;height:24px;border-radius:50%;border:1.5px solid #2a2a34;display:flex;align-items:center;justify-content:center;font-size:10px;color:#444;flex-shrink:0;transition:all .3s;}
+.step-num.active{border-color:var(--blue);color:#6e9fff;background:rgba(23,95,255,.1);box-shadow:0 0 0 4px rgba(23,95,255,.1);}
+.step-num.done{border-color:var(--cyan);background:var(--cyan);color:#08110f;}
 .step-lbl{font-size:11px;color:#444;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;transition:color .3s;}
 .step-lbl.active{color:#c8c8d4;}
-.step-line{flex:1;height:1px;background:#1e1e26;margin:0 4px;max-width:36px;transition:background .3s;}
-.step-line.done{background:#00E5C8;}
+.step-line{flex:1;height:2px;background:var(--line);margin:0 4px;max-width:30px;transition:background .4s;}
+.step-line.done{background:var(--cyan);}
 
-/* Two-column layout: content | axon */
-.layout{max-width:900px;margin:0 auto;padding:0 24px;display:grid;grid-template-columns:1fr 220px;gap:20px;align-items:start;}
-
-/* Content column */
-.content{min-width:0;padding:18px 0 80px;}
-
-/* Axon column — sticky so it follows scroll */
-.axon-col{position:sticky;top:80px;padding:18px 0;}
+/* ───────────── LAYOUT ───────────── */
+.layout{max-width:1160px;margin:0 auto;padding:0 24px;position:relative;}
+.content{max-width:860px;min-width:0;padding:18px 0 40px;}
 
 .hero{margin-bottom:18px;}
 .hero-tag{display:inline-block;background:rgba(23,95,255,.12);border:1px solid rgba(23,95,255,.2);color:#6e9fff;font-size:11px;font-weight:500;padding:3px 9px;border-radius:5px;margin-bottom:10px;}
-.hero h1{font-size:20px;font-weight:700;line-height:1.3;color:#F6F3F0;margin-bottom:6px;}
-.hero h1 span{color:#175FFF;}
-.hero p{font-size:13px;color:#6b6b7a;line-height:1.65;}
+.hero h1{font-size:20px;font-weight:800;line-height:1.3;margin-bottom:6px;}
+.hero h1 span{color:var(--blue);}
+.hero p{font-size:13px;color:var(--muted);line-height:1.65;}
 
-.card{background:#161619;border:1px solid #1e1e26;border-radius:12px;padding:14px 16px;margin-bottom:12px;transition:border-color .25s,box-shadow .25s;}
-.card.highlight{border-color:rgba(23,95,255,.45);box-shadow:0 0 0 2px rgba(23,95,255,.08);}
+.card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:14px 16px;margin-bottom:12px;transition:border-color .25s,box-shadow .25s,transform .25s;}
 .card-label{font-size:10px;font-weight:600;color:#444;text-transform:uppercase;letter-spacing:.05em;margin-bottom:10px;}
-
 .info-card{display:flex;gap:12px;}
-.info-icon{width:30px;height:30px;background:rgba(23,95,255,.12);border:1px solid rgba(23,95,255,.2);border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:14px;flex-shrink:0;margin-top:1px;}
-.info-body h3{font-size:12px;font-weight:600;color:#F6F3F0;margin-bottom:4px;}
-.info-body p{font-size:12px;color:#6b6b7a;line-height:1.65;}
+.info-icon{width:32px;height:32px;background:rgba(23,95,255,.12);border:1px solid rgba(23,95,255,.2);border-radius:9px;display:flex;align-items:center;justify-content:center;font-size:15px;flex-shrink:0;margin-top:1px;}
+.info-body h3{font-size:12px;font-weight:600;margin-bottom:4px;}
+.info-body p{font-size:12px;color:var(--muted);line-height:1.7;}
 .info-body p strong{color:#c8c8d4;}
 
-.reveal{opacity:0;transform:translateY(5px);transition:all .3s ease;pointer-events:none;}
-.reveal.show{opacity:1;transform:none;pointer-events:auto;}
+.reveal{opacity:0;transform:translateY(8px) scale(.99);transition:all .45s cubic-bezier(.16,1,.3,1);pointer-events:none;height:0;overflow:hidden;margin:0;}
+.reveal.show{opacity:1;transform:none;pointer-events:auto;height:auto;overflow:visible;margin-bottom:12px;}
 
-.hint-bar{background:#161619;border:1px solid #1e1e26;border-radius:8px;padding:9px 13px;font-size:12px;color:#6b6b7a;margin-bottom:12px;display:flex;align-items:center;gap:7px;}
-.hint-bar.good{border-color:rgba(0,229,200,.3);color:#00E5C8;background:rgba(0,229,200,.04);}
-.hint-bar.bad{border-color:rgba(255,68,80,.3);color:#ff8a94;background:rgba(255,68,80,.04);}
-
-.prog-row{display:flex;align-items:center;gap:10px;margin-bottom:12px;}
-.prog-lbl{font-size:11px;color:#444;white-space:nowrap;}
-.prog-track{flex:1;height:4px;background:#1e1e26;border-radius:2px;overflow:hidden;}
-.prog-fill{height:100%;background:#00E5C8;border-radius:2px;width:0%;transition:width .4s;}
-.prog-val{font-size:11px;color:#00E5C8;font-weight:600;min-width:32px;text-align:right;}
-.reset-link{font-size:11px;color:#444;cursor:pointer;background:none;border:none;font-family:'Inter',sans-serif;text-decoration:underline;}
-.reset-link:hover{color:#6e9fff;}
-
-.two-col{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px;}
-
-.task-item{background:#111113;border:1px solid rgba(23,95,255,.18);border-radius:8px;padding:9px 11px;margin-bottom:7px;cursor:grab;transition:all .18s;}
-.task-item:last-child{margin-bottom:0;}
-.task-item:hover{border-color:#175FFF;background:rgba(23,95,255,.06);}
-.task-item.placed{opacity:.25;pointer-events:none;border-color:rgba(0,229,200,.25);}
-.task-item.dragging{opacity:.35;}
-.task-badge{display:inline-block;background:rgba(23,95,255,.12);color:#6e9fff;font-size:10px;font-weight:600;padding:1px 7px;border-radius:4px;margin-bottom:4px;}
-.task-text{font-size:12px;color:#c8c8d4;line-height:1.5;}
-.task-item.pulse{animation:pulse 1s ease 3;}
-@keyframes pulse{0%,100%{box-shadow:none;}50%{box-shadow:0 0 0 3px rgba(23,95,255,.2);}}
-
-.phase-drop{border:1.5px dashed #252530;border-radius:8px;padding:11px;margin-bottom:7px;min-height:66px;transition:all .22s;display:flex;flex-direction:column;gap:4px;}
-.phase-drop:last-child{margin-bottom:0;}
-.phase-drop.hover{border-color:#175FFF;background:rgba(23,95,255,.05);}
-.phase-drop.correct{border-style:solid;border-color:rgba(0,229,200,.4);background:rgba(0,229,200,.04);}
-.phase-drop.wrong{border-style:solid;border-color:rgba(255,68,80,.4);animation:shake .25s;}
-@keyframes shake{0%,100%{transform:translateX(0);}30%{transform:translateX(-4px);}70%{transform:translateX(4px);}}
-.phase-num{font-size:10px;color:#444;font-weight:500;}
-.phase-name{font-size:12px;font-weight:600;color:#F6F3F0;}
-.phase-desc{font-size:11px;color:#555;line-height:1.45;}
-.phase-hint{font-size:11px;color:#2e2e3a;font-style:italic;}
-.phase-placed{background:rgba(0,229,200,.08);border:1px solid rgba(0,229,200,.2);border-radius:5px;padding:4px 7px;font-size:11px;color:#00E5C8;margin-top:2px;}
-
-.result-card{display:none;margin-bottom:12px;}
-.result-card.show{display:block;animation:fadeUp .3s ease;}
-@keyframes fadeUp{from{opacity:0;transform:translateY(5px);}to{opacity:1;transform:none;}}
-.result-row{display:flex;align-items:flex-start;gap:8px;padding:7px 0;border-bottom:1px solid #1a1a22;}
-.result-row:last-child{border-bottom:none;}
-.result-dot{width:5px;height:5px;border-radius:50%;background:#00E5C8;flex-shrink:0;margin-top:5px;}
-.result-text{font-size:12px;color:#6b6b7a;line-height:1.6;}
-.result-text strong{color:#c8c8d4;}
-
-.primary-btn{width:100%;background:#175FFF;color:#fff;border:none;padding:9px;border-radius:8px;font-size:13px;font-weight:600;cursor:pointer;font-family:'Inter',sans-serif;transition:background .15s;margin-top:9px;}
-.primary-btn:hover{background:#1249cc;}
-.primary-btn:disabled{opacity:.3;cursor:not-allowed;}
-
-select{width:100%;background:#111113;border:1px solid #252530;color:#F6F3F0;padding:8px 10px;border-radius:8px;font-family:'Inter',sans-serif;font-size:13px;cursor:pointer;margin-bottom:9px;outline:none;}
-select:focus{border-color:#175FFF;}
-
-input[type=range]{width:100%;-webkit-appearance:none;height:3px;background:#1e1e26;border-radius:2px;outline:none;cursor:pointer;}
-input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:16px;height:16px;border-radius:50%;background:#175FFF;cursor:pointer;border:2px solid #111113;box-shadow:0 1px 4px rgba(0,0,0,.4);}
-input[type=range].lit::-webkit-slider-thumb{background:#00E5C8;}
-.range-labels{display:flex;justify-content:space-between;font-size:10px;color:#444;margin-top:4px;}
-
-.out-box{background:#0d0d10;border:1px solid #1e1e26;border-radius:8px;padding:11px 13px;min-height:100px;font-size:12px;color:#6b6b7a;line-height:1.7;transition:all .25s;white-space:pre-wrap;word-break:break-word;}
-.out-box.active{border-color:rgba(0,229,200,.35);color:#c8c8d4;}
-.out-box.warn{border-color:rgba(255,170,30,.3);color:#c8a040;}
-.out-box.error{border-color:rgba(255,68,80,.3);color:#ff8a94;}
-.out-note{font-size:10px;color:#444;margin-top:6px;}
-
-.metrics{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-top:10px;}
-.metric{background:#111113;border:1px solid #1e1e26;border-radius:8px;padding:9px;text-align:center;}
-.metric-val{font-size:15px;font-weight:700;color:#2e2e3a;margin-bottom:2px;transition:color .4s;}
-.metric-val.on{color:#00E5C8;}
-.metric-lbl{font-size:10px;color:#444;}
-
-.brain-wrap{width:110px;height:110px;position:relative;margin:6px auto 10px;display:flex;align-items:center;justify-content:center;}
-.brain-core{width:58px;height:58px;border-radius:50%;background:rgba(23,95,255,.12);border:2px solid rgba(23,95,255,.25);display:flex;align-items:center;justify-content:center;font-size:22px;z-index:2;position:relative;transition:all .4s;}
-.brain-core.on{border-color:rgba(0,229,200,.5);background:rgba(0,229,200,.08);}
-.orbit{position:absolute;border-radius:50%;border:1px solid rgba(23,95,255,.12);top:50%;left:50%;transform:translate(-50%,-50%);transition:border-color .4s;}
-.orbit.on{border-color:rgba(0,229,200,.25);}
-.o1{width:80px;height:80px;}.o2{width:106px;height:106px;}
-.nd{position:absolute;width:5px;height:5px;border-radius:50%;background:rgba(23,95,255,.35);transition:background .4s;}
-.nd.on{background:#00E5C8;}
-
-.pipe-row{display:flex;gap:0;margin-bottom:10px;}
-.p-stage{flex:1;background:#161619;border:1px solid #1e1e26;padding:10px 6px;cursor:pointer;transition:all .2s;border-right:none;text-align:center;}
-.p-stage:first-child{border-radius:10px 0 0 10px;}.p-stage:last-child{border-radius:0 10px 10px 0;border-right:1px solid #1e1e26;}
-.p-stage:hover{background:rgba(23,95,255,.06);border-color:rgba(23,95,255,.25);}
-.p-stage.correct{background:rgba(0,229,200,.05);border-color:rgba(0,229,200,.35)!important;}
-.p-stage.wrong{animation:shake .25s;border-color:rgba(255,68,80,.35)!important;background:rgba(255,68,80,.05);}
-.p-stage.dimmed{opacity:.22;pointer-events:none;}
-.ps-ico{font-size:16px;margin-bottom:4px;}.ps-name{font-size:10px;font-weight:600;color:#c8c8d4;line-height:1.3;}.ps-sub{font-size:9px;color:#444;margin-top:1px;}
-
-.err-banner{background:rgba(255,68,80,.06);border:1px solid rgba(255,68,80,.25);border-radius:10px;padding:11px 13px;margin-bottom:10px;}
-.err-label{font-size:11px;font-weight:600;color:#ff8a94;margin-bottom:3px;display:flex;align-items:center;gap:5px;}
-.err-dot{width:7px;height:7px;border-radius:50%;background:#ff4450;animation:blink 1.2s infinite;flex-shrink:0;}
-@keyframes blink{0%,100%{opacity:1;}50%{opacity:.2;}}
-.err-text{font-size:12px;color:#ff8a94;line-height:1.6;}
-
-.analogy-row{display:grid;grid-template-columns:repeat(5,1fr);gap:5px;margin-top:9px;}
-.an-item{background:#111113;border:1px solid #1e1e26;border-radius:8px;padding:8px 4px;text-align:center;}
-.an-ico{font-size:14px;margin-bottom:3px;}.an-stage{font-size:9px;color:#00E5C8;font-weight:500;margin-bottom:2px;}.an-name{font-size:10px;font-weight:500;color:#c8c8d4;line-height:1.2;}.an-sub{font-size:9px;color:#444;margin-top:1px;}
-
-.stage-tabs{display:flex;gap:0;margin-bottom:10px;overflow-x:auto;}
-.s-tab{flex:1;min-width:85px;background:#161619;border:1px solid #1e1e26;padding:9px 6px;cursor:pointer;transition:all .18s;border-right:none;text-align:center;}
-.s-tab:first-child{border-radius:9px 0 0 9px;}.s-tab:last-child{border-radius:0 9px 9px 0;border-right:1px solid #1e1e26;}
-.s-tab:hover{background:rgba(23,95,255,.06);}.s-tab.active{background:rgba(23,95,255,.1);border-color:rgba(23,95,255,.35);z-index:1;position:relative;}
-.s-tab .si{font-size:16px;margin-bottom:3px;}.s-tab .sn{font-size:9px;color:#444;margin-bottom:1px;}.s-tab .st{font-size:10px;font-weight:500;color:#6b6b7a;}.s-tab.active .st{color:#6e9fff;}
-
-.path-row{display:flex;align-items:center;gap:3px;margin-bottom:10px;}
-.path-dot{width:22px;height:22px;border-radius:50%;border:1.5px solid #252530;display:flex;align-items:center;justify-content:center;font-size:10px;flex-shrink:0;transition:all .3s;}
-.path-dot.on{border-color:#00E5C8;background:rgba(0,229,200,.08);}
-.path-line{flex:1;height:1px;background:#1e1e26;transition:background .3s;}.path-line.on{background:#00E5C8;}
-
-.stage-badge{display:inline-block;background:rgba(23,95,255,.12);border:1px solid rgba(23,95,255,.2);color:#6e9fff;font-size:10px;font-weight:500;padding:2px 8px;border-radius:4px;margin-bottom:6px;}
-.stage-badge.good{background:rgba(0,229,200,.1);border-color:rgba(0,229,200,.2);color:#00E5C8;}
-.stage-name{font-size:13px;font-weight:600;color:#F6F3F0;margin-bottom:4px;}
-.stage-desc{font-size:12px;color:#6b6b7a;line-height:1.6;margin-bottom:7px;}
-.stat-pills{display:flex;flex-wrap:wrap;gap:5px;}
-.stat-pill{background:#111113;border:1px solid #252530;border-radius:5px;padding:3px 8px;font-size:10px;color:#555;}
-.stat-pill.ok{border-color:rgba(0,229,200,.25);color:#00E5C8;}
-
-.tog-row{display:flex;align-items:center;justify-content:space-between;background:#111113;border:1px solid #252530;border-radius:8px;padding:9px 11px;margin-bottom:7px;cursor:pointer;transition:all .18s;}
-.tog-row:hover{border-color:rgba(23,95,255,.3);}.tog-row.on{background:rgba(0,229,200,.04);border-color:rgba(0,229,200,.25);}
-.tog-left{flex:1;min-width:0;}
-.tog-name{font-size:12px;font-weight:500;color:#F6F3F0;}.tog-sub{font-size:10px;color:#444;margin-top:1px;}
-.tog-sw{width:30px;height:17px;background:#252530;border-radius:9px;position:relative;flex-shrink:0;transition:background .25s;}
-.tog-sw::after{content:'';position:absolute;width:12px;height:12px;border-radius:50%;background:#444;top:2.5px;left:2.5px;transition:left .25s;}
-.tog-row.on .tog-sw{background:#00E5C8;}.tog-row.on .tog-sw::after{left:15.5px;background:#111113;}
-
-.token-chip{display:inline-block;background:rgba(23,95,255,.08);border:1px solid rgba(23,95,255,.18);color:#6e9fff;font-size:10px;padding:2px 7px;border-radius:5px;margin:2px;transition:all .25s;}
-.token-chip small{font-size:9px;color:#444;display:block;text-align:center;}
-.token-chip.on{background:rgba(0,229,200,.08);border-color:rgba(0,229,200,.25);color:#00E5C8;}
-
-.t3-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-top:10px;}
-.t3-card{background:#111113;border:1px solid #1e1e26;border-radius:9px;padding:12px;text-align:center;transition:all .25s;}
-.t3-card.on{background:rgba(0,229,200,.04);border-color:rgba(0,229,200,.2);}
-.t3-ico{font-size:20px;margin-bottom:6px;}.t3-tag{font-size:9px;color:#444;font-weight:600;margin-bottom:3px;}.t3-name{font-size:12px;font-weight:600;color:#F6F3F0;margin-bottom:4px;}.t3-desc{font-size:11px;color:#555;line-height:1.55;}
-
-.poll-row{display:flex;align-items:center;justify-content:space-between;background:#111113;border:1px solid #252530;border-radius:8px;padding:8px 11px;margin-bottom:6px;cursor:pointer;font-size:12px;color:#8a8a9a;transition:all .18s;gap:8px;}
-.poll-row:hover{border-color:rgba(23,95,255,.3);}.poll-row.voted{pointer-events:none;}
-.poll-right{display:flex;align-items:center;gap:6px;flex-shrink:0;}
-.poll-track{width:60px;height:3px;background:#1e1e26;border-radius:2px;overflow:hidden;}
-.poll-fill{height:100%;background:#175FFF;border-radius:2px;transition:width .4s;width:0%;}
-.poll-pct{font-size:10px;color:#555;min-width:26px;text-align:right;}
-.poll-result{font-size:12px;color:#00E5C8;background:rgba(0,229,200,.05);border:1px solid rgba(0,229,200,.18);border-radius:7px;padding:8px 11px;margin-top:7px;line-height:1.6;display:none;}
-
-.pf-flow{display:flex;gap:0;margin-bottom:10px;background:#161619;border:1px solid #1e1e26;border-radius:10px;overflow:hidden;}
-.pf-s{flex:1;padding:9px 7px;text-align:center;border-right:1px solid #1e1e26;transition:all .25s;}
+/* ───────────── PHASE FLOW ───────────── */
+.pf-flow{display:flex;gap:0;margin-bottom:12px;background:var(--card);border:1px solid var(--line);border-radius:12px;overflow:hidden;}
+.pf-s{flex:1;padding:10px 7px;text-align:center;border-right:1px solid var(--line);transition:all .3s;}
 .pf-s:last-child{border-right:none;}
-.pf-s.on{background:rgba(0,229,200,.05);border-bottom:2px solid rgba(0,229,200,.4);}
-.pf-ico{font-size:15px;margin-bottom:3px;}.pf-lbl{font-size:10px;color:#444;font-weight:500;}
-.pf-s.on .pf-lbl{color:#00E5C8;}
+.pf-s.on{background:rgba(0,229,200,.06);border-bottom:2px solid rgba(0,229,200,.5);}
+.pf-ico{font-size:16px;margin-bottom:3px;}
+.pf-lbl{font-size:10px;color:#555;font-weight:600;}
+.pf-s.on .pf-lbl{color:var(--cyan);}
 
-.quiz-wrap{background:#161619;border:1px solid #1e1e26;border-radius:12px;padding:14px 16px;margin-bottom:16px;transition:border-color .25s;}
-.quiz-wrap.highlight{border-color:rgba(23,95,255,.45);box-shadow:0 0 0 2px rgba(23,95,255,.08);}
+/* ───────────── FLAG TOGGLES ───────────── */
+.tog-row{display:flex;align-items:center;justify-content:space-between;background:var(--bg);border:1.5px solid #252530;border-radius:10px;padding:10px 11px;margin-bottom:7px;cursor:pointer;transition:all .2s;}
+.tog-row:hover{border-color:rgba(23,95,255,.4);}
+.tog-row.on{background:rgba(0,229,200,.05);border-color:rgba(0,229,200,.35);}
+.tog-row.locked{opacity:.32;pointer-events:none;}
+.tog-left{flex:1;min-width:0;}
+.tog-name{font-size:12px;font-weight:600;}
+.tog-sub{font-size:10px;color:#555;margin-top:1px;}
+.tog-sw{width:32px;height:18px;background:#252530;border-radius:9px;position:relative;flex-shrink:0;transition:background .25s;}
+.tog-sw::after{content:'';position:absolute;width:13px;height:13px;border-radius:50%;background:#555;top:2.5px;left:2.5px;transition:left .25s,background .25s;}
+.tog-row.on .tog-sw{background:var(--cyan);}
+.tog-row.on .tog-sw::after{left:16.5px;background:#08110f;}
+.flag-state{margin-top:8px;background:var(--bg);border:1px solid #252530;border-radius:8px;padding:8px 10px;font-size:10px;color:#555;line-height:1.8;}
+.flag-state span{color:#c8c8d4;font-weight:600;}
+
+/* ───────────── TOKENS / DIAGNOSTIC ───────────── */
+.scenario-box{background:var(--bg);border:1px solid #252530;border-radius:9px;padding:9px;margin-bottom:8px;}
+.scenario-q{font-size:13px;margin-bottom:5px;}
+.scenario-note{font-size:10px;color:#ff8a94;background:rgba(255,68,80,.07);border:1px solid rgba(255,68,80,.2);border-radius:6px;padding:5px 8px;}
+.token-chip{display:inline-block;background:rgba(23,95,255,.08);border:1px solid rgba(23,95,255,.2);color:#6e9fff;font-size:10px;padding:2px 7px;border-radius:6px;margin:2px;transition:all .25s;}
+.token-chip small{font-size:9px;color:#555;display:block;text-align:center;}
+.token-chip.on{background:rgba(0,229,200,.08);border-color:rgba(0,229,200,.3);color:var(--cyan);}
+.out-box{background:#0d0d10;border:1px solid var(--line);border-radius:10px;padding:11px 13px;min-height:110px;font-size:12px;color:var(--muted);line-height:1.7;transition:all .3s;white-space:pre-wrap;word-break:break-word;}
+.out-box.active{border-color:rgba(0,229,200,.4);color:#c8c8d4;animation:fadeUp .35s ease;}
+.out-box.warn{border-color:rgba(255,170,30,.35);color:#c8a040;animation:fadeUp .35s ease;}
+.out-box.error{border-color:rgba(255,68,80,.35);color:#ff8a94;animation:fadeUp .35s ease;}
+.out-note{font-size:10px;color:#555;margin-top:6px;}
+@keyframes fadeUp{from{opacity:0;transform:translateY(5px)}to{opacity:1;transform:none}}
+
+/* ───────────── TRANSFORMER COMPONENTS ───────────── */
+.t3-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-top:10px;}
+.t3-card{background:var(--bg);border:1.5px solid var(--line);border-radius:11px;padding:12px;text-align:center;transition:all .3s;}
+.t3-card.on{background:rgba(0,229,200,.05);border-color:rgba(0,229,200,.3);}
+.t3-ico{font-size:21px;margin-bottom:6px;}
+.t3-tag{font-size:9px;color:#555;font-weight:700;margin-bottom:3px;}
+.t3-name{font-size:12px;font-weight:700;margin-bottom:4px;}
+.t3-desc{font-size:11px;color:#666;line-height:1.55;}
+
+/* ───────────── QUIZ ───────────── */
+.quiz-wrap{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:14px 16px;}
 .quiz-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:11px;}
-.quiz-label{font-size:12px;font-weight:600;color:#F6F3F0;}
+.quiz-label{font-size:12px;font-weight:600;}
 .quiz-score{font-size:12px;color:#444;}
-.quiz-q{font-size:13px;font-weight:500;color:#F6F3F0;line-height:1.5;margin-bottom:10px;}
+.quiz-q{font-size:13px;font-weight:500;line-height:1.5;margin-bottom:10px;}
 .quiz-opts{display:grid;grid-template-columns:1fr 1fr;gap:6px;}
-.opt-btn{background:#111113;border:1px solid #252530;color:#8a8a9a;padding:9px 11px;border-radius:8px;cursor:pointer;font-family:'Inter',sans-serif;font-size:12px;text-align:left;transition:all .18s;line-height:1.4;}
-.opt-btn:hover{border-color:rgba(23,95,255,.35);color:#c8c8d4;}
-.opt-btn.correct{border-color:rgba(0,229,200,.4);background:rgba(0,229,200,.05);color:#00E5C8;}
-.opt-btn.wrong{border-color:rgba(255,68,80,.35);background:rgba(255,68,80,.05);color:#ff8a94;}
+.opt-btn{background:var(--bg);border:1.5px solid #252530;color:#8a8a9a;padding:10px 11px;border-radius:10px;cursor:pointer;font-family:'Inter',sans-serif;font-size:12px;text-align:left;transition:all .15s;line-height:1.4;box-shadow:0 2px 0 #1a1a20;}
+.opt-btn:hover{border-color:rgba(23,95,255,.4);color:#c8c8d4;transform:translateY(-1px);}
+.opt-btn:active{transform:translateY(1px);box-shadow:none;}
+.opt-btn.correct{border-color:rgba(0,229,200,.5);background:rgba(0,229,200,.06);color:var(--cyan);box-shadow:0 2px 0 rgba(0,229,200,.2);animation:dropPop .45s ease;}
+.opt-btn.wrong{border-color:rgba(255,68,80,.45);background:rgba(255,68,80,.06);color:#ff8a94;animation:shake .4s;}
+@keyframes dropPop{0%{transform:scale(1)}45%{transform:scale(1.04)}100%{transform:scale(1)}}
+@keyframes shake{0%,100%{transform:translateX(0)}20%{transform:translateX(-6px)}40%{transform:translateX(6px)}60%{transform:translateX(-4px)}80%{transform:translateX(4px)}}
 .quiz-fb{margin-top:9px;font-size:12px;color:#555;line-height:1.6;}
-.quiz-fb.ok{color:#00E5C8;}
-.next-btn{margin-top:8px;background:transparent;border:1px solid #252530;color:#444;padding:6px 13px;border-radius:6px;font-size:11px;cursor:pointer;font-family:'Inter',sans-serif;display:none;transition:all .18s;}
-.next-btn:hover{border-color:#175FFF;color:#6e9fff;}
+.quiz-fb.ok{color:var(--cyan);}
+.next-btn{margin-top:8px;background:transparent;border:1px solid #252530;color:#444;padding:6px 13px;border-radius:8px;font-size:11px;cursor:pointer;font-family:'Inter',sans-serif;display:none;transition:all .18s;}
+.next-btn:hover{border-color:var(--blue);color:#6e9fff;}
 
-.cot-block{border-left:2px solid rgba(0,229,200,.3);padding-left:9px;margin-bottom:6px;}
-.cot-step{font-size:10px;color:#444;margin-bottom:2px;}.cot-step span{color:#00E5C8;}
+/* ───────────── SPOTLIGHT ───────────── */
+#dim{position:fixed;inset:0;background:rgba(8,8,12,.62);z-index:900;opacity:0;pointer-events:none;transition:opacity .45s ease;}
+#dim.on{opacity:1;}
+.lit-target{position:relative;z-index:950;border-radius:14px;}
+#spotlight{
+  position:fixed;top:0;left:0;width:0;height:0;border-radius:16px;z-index:1100;
+  border:2px solid rgba(23,95,255,0);pointer-events:none;opacity:0;
+  transition:top .6s cubic-bezier(.16,1,.3,1),left .6s cubic-bezier(.16,1,.3,1),
+             width .6s cubic-bezier(.16,1,.3,1),height .6s cubic-bezier(.16,1,.3,1),
+             border-color .5s ease,opacity .4s ease;
+}
+#spotlight.on{opacity:1;border-color:rgba(23,95,255,.7);box-shadow:0 0 22px rgba(23,95,255,.25),0 0 0 1px rgba(0,229,200,.15);}
+#spotlight::after{content:'';position:absolute;inset:-2px;border-radius:16px;border:2px solid rgba(0,229,200,.6);opacity:0;animation:ring 1.8s ease-out infinite;}
+#spotlight.on::after{opacity:1;}
+@keyframes ring{0%{transform:scale(1);opacity:.7}100%{transform:scale(1.05);opacity:0}}
 
-/* ── AXON RIGHT-COLUMN BOT ── */
-.axon-widget{
-  position:sticky;
-  top:90px;
-  width:200px;
-}
-.axon-avatar{
-  width:36px;height:36px;
-  background:linear-gradient(135deg,#175FFF,#0a3acc);
-  border-radius:50%;
-  display:flex;align-items:center;justify-content:center;
-  font-size:16px;
-  box-shadow:0 2px 10px rgba(23,95,255,.4);
-  animation:axonFloat 2.5s ease-in-out infinite;
-  cursor:pointer;
-  margin-bottom:8px;
-}
-@keyframes axonFloat{0%,100%{transform:translateY(0);}50%{transform:translateY(-4px);}}
-.axon-bubble{
-  background:#161619;
-  border:1px solid rgba(23,95,255,.4);
-  border-radius:4px 12px 12px 12px;
-  padding:10px 12px;
-  box-shadow:0 4px 16px rgba(0,0,0,.5);
-  opacity:0;
-  transform:scale(.95);
-  transition:opacity .25s,transform .25s;
-  pointer-events:none;
-}
-.axon-bubble.show{opacity:1;transform:scale(1);pointer-events:auto;}
-.axon-name{font-size:10px;font-weight:600;color:#175FFF;margin-bottom:4px;display:flex;align-items:center;gap:4px;}
-.axon-name::before{content:'';width:5px;height:5px;border-radius:50%;background:#00E5C8;display:inline-block;}
-.axon-msg{font-size:11px;color:#c8c8d4;line-height:1.65;}
-.axon-btns{display:flex;flex-direction:column;gap:5px;margin-top:8px;}
-.axon-btn{background:#175FFF;color:#fff;border:none;padding:6px 10px;border-radius:6px;font-size:11px;font-weight:600;cursor:pointer;font-family:'Inter',sans-serif;transition:background .15s;width:100%;text-align:left;}
-.axon-btn:hover{background:#1249cc;}
-.axon-btn.soft{background:transparent;border:1px solid #2a2a34;color:#555;width:100%;}
-.axon-btn.soft:hover{border-color:#175FFF;color:#6e9fff;}
+/* ───────────── FLYING AXON ───────────── */
+#axonWidget{position:fixed;left:0;top:140px;width:74px;height:96px;z-index:1500;pointer-events:none;
+  transition:top .7s cubic-bezier(.16,1,.3,1),left .7s cubic-bezier(.16,1,.3,1);}
+.bot-container{width:74px;height:96px;position:relative;cursor:pointer;pointer-events:auto;display:flex;flex-direction:column;align-items:center;animation:botFloat 2.6s ease-in-out infinite;}
+.bot-container::after{content:'';position:absolute;bottom:-4px;width:15px;height:24px;background:linear-gradient(to bottom,var(--cyan),rgba(23,95,255,.8),transparent);border-radius:50% 50% 20% 20%;filter:drop-shadow(0 0 7px var(--cyan));animation:jetThrust .15s ease-in-out infinite alternate;z-index:1;}
+.bot-head{width:54px;height:46px;background:radial-gradient(circle at 30% 30%,#fff,#e2e8f0,#cbd5e1);border-radius:24px 24px 19px 19px;box-shadow:inset -2px -3px 6px rgba(0,0,0,.15),0 4px 12px rgba(0,0,0,.35);position:relative;display:flex;align-items:center;justify-content:center;z-index:3;}
+.bot-head::before{content:'';position:absolute;top:-9px;width:6px;height:10px;background:#475569;border-radius:3px 3px 0 0;left:calc(50% - 3px);}
+.bot-head::after{content:'';position:absolute;top:-13px;width:8px;height:8px;background:radial-gradient(circle at 30% 30%,#fff,#94a3b8);border-radius:50%;left:calc(50% - 4px);animation:antenna 1.2s ease-in-out infinite;}
+@keyframes antenna{0%,100%{transform:translateX(0)}50%{transform:translateX(2px)}}
+.bot-screen{width:42px;height:28px;background:#111115;border-radius:13px;border:1.5px solid #334155;box-shadow:inset 0 2px 5px rgba(0,0,0,.8);display:flex;align-items:center;justify-content:space-around;padding:0 6px;position:relative;overflow:hidden;}
+.bot-eye{width:6px;height:11px;background:var(--cyan);border-radius:3px;box-shadow:0 0 7px var(--cyan);transition:all .22s;}
+.bot-smile{position:absolute;bottom:4px;width:11px;height:5px;border-bottom:2px solid var(--cyan);border-radius:0 0 6px 6px;filter:drop-shadow(0 0 2px var(--cyan));transition:all .22s;}
+.bot-body{width:38px;height:28px;background:radial-gradient(circle at 30% 30%,#fff,#e2e8f0,#cbd5e1);border-radius:9px 9px 15px 15px;margin-top:-3px;box-shadow:inset -1px -2px 4px rgba(0,0,0,.2),0 3px 6px rgba(0,0,0,.25);position:relative;z-index:2;}
+.bot-body::before{content:'';position:absolute;top:3px;left:7px;width:24px;height:8px;border-bottom:2px solid #334155;border-radius:0 0 11px 11px;}
+.bot-arm-left,.bot-arm-right{position:absolute;width:11px;height:19px;background:#e2e8f0;border-radius:6px;top:46px;box-shadow:0 2px 4px rgba(0,0,0,.2);}
+.bot-arm-left{left:-6px;transform:rotate(20deg);transform-origin:top right;}
+.bot-arm-right{right:-6px;transform:rotate(-35deg);transform-origin:top left;animation:botWave 1.2s ease-in-out infinite alternate;}
+@keyframes botFloat{0%,100%{transform:translateY(0)}50%{transform:translateY(-8px)}}
+@keyframes jetThrust{0%{height:20px;opacity:.9}100%{height:27px;opacity:1}}
+@keyframes botWave{0%{transform:rotate(-25deg)}100%{transform:rotate(-48deg)}}
+/* Expressions */
+.bot-container.m-idle .bot-eye{animation:blinkEye 4.2s infinite;}
+@keyframes blinkEye{0%,92%,100%{transform:scaleY(1)}96%{transform:scaleY(.12)}}
+.bot-container.m-happy .bot-eye{height:7px;border-radius:7px 7px 2px 2px;}
+.bot-container.m-happy .bot-smile{width:15px;height:8px;}
+.bot-container.m-celebrate .bot-eye{height:5px;border-radius:7px 7px 0 0;}
+.bot-container.m-celebrate .bot-smile{width:16px;height:9px;}
+.bot-container.m-think .bot-eye{transform:translateY(-2px);height:8px;}
+.bot-container.m-think .bot-eye:nth-child(2){transform:translateY(-4px);}
+.bot-container.m-think .bot-smile{width:6px;height:3px;}
+.bot-container.m-sad .bot-eye{height:7px;transform:translateY(2px) rotate(12deg);opacity:.85;}
+.bot-container.m-sad .bot-eye:nth-child(2){transform:translateY(2px) rotate(-12deg);}
+.bot-container.m-sad .bot-smile{bottom:5px;border-bottom:none;border-top:2px solid var(--cyan);border-radius:6px 6px 0 0;}
+.bot-container.m-wow .bot-eye{width:10px;height:10px;border-radius:50%;}
+.bot-container.m-wow .bot-smile{width:8px;height:8px;border:2px solid var(--cyan);border-radius:50%;bottom:2px;}
+.bot-container.m-think::before{content:'';position:absolute;top:-4px;right:6px;width:5px;height:5px;border-radius:50%;background:var(--cyan);box-shadow:6px -5px 0 -1px var(--cyan),11px -9px 0 -2px var(--cyan);opacity:.8;animation:thinkDots 1.4s ease-in-out infinite;}
+@keyframes thinkDots{0%,100%{opacity:.3}50%{opacity:.9}}
+.bot-container.react-celebrate{animation:botCelebrate .8s ease;}
+@keyframes botCelebrate{0%{transform:translateY(0) rotate(0)}20%{transform:translateY(-16px) rotate(-14deg)}45%{transform:translateY(-4px) rotate(12deg)}70%{transform:translateY(-10px) rotate(-7deg)}100%{transform:translateY(0) rotate(0)}}
+.bot-container.react-sad{animation:botSad .6s ease;}
+@keyframes botSad{0%,100%{transform:translateY(0)}30%{transform:translateY(6px) scale(.95) rotate(-3deg)}60%{transform:translateY(3px) rotate(3deg)}}
 
-@media(max-width:700px){
-  .layout{grid-template-columns:1fr;}
-  .axon-col{display:none;}
-  .two-col{grid-template-columns:1fr;}
+/* ───────────── COACH DOCK ───────────── */
+#coachDock{position:fixed;left:0;right:0;bottom:0;z-index:1300;background:linear-gradient(to top,#161619,#161619 70%,rgba(22,22,25,0));border-top:1px solid var(--line);padding:14px 24px calc(14px + env(safe-area-inset-bottom));transform:translateY(120%);transition:transform .55s cubic-bezier(.16,1,.3,1);}
+#coachDock.up{transform:translateY(0);}
+.dock-inner{max-width:900px;margin:0 auto;display:flex;align-items:center;gap:14px;}
+.dock-ava{width:48px;height:48px;border-radius:50%;background:#111115;border:2px solid rgba(0,229,200,.4);flex-shrink:0;display:flex;align-items:center;justify-content:space-around;padding:0 9px;position:relative;box-shadow:0 0 14px rgba(0,229,200,.18);animation:avaBob 1.6s ease-in-out infinite;}
+@keyframes avaBob{0%,100%{transform:translateY(0)}50%{transform:translateY(-3px)}}
+.ca-eye{width:5px;height:9px;background:var(--cyan);border-radius:3px;box-shadow:0 0 5px var(--cyan);transition:all .22s;}
+.ca-mouth{position:absolute;bottom:11px;width:10px;height:4px;border-bottom:2px solid var(--cyan);border-radius:0 0 6px 6px;transition:all .22s;}
+.dock-ava.m-happy .ca-eye{height:5px;border-radius:6px 6px 1px 1px;}
+.dock-ava.m-happy .ca-mouth{width:13px;height:6px;}
+.dock-ava.m-celebrate .ca-eye{height:4px;border-radius:6px 6px 0 0;}
+.dock-ava.m-celebrate .ca-mouth{width:14px;height:7px;}
+.dock-ava.m-think .ca-eye{transform:translateY(-2px);}
+.dock-ava.m-think .ca-mouth{width:5px;}
+.dock-ava.m-sad .ca-eye{transform:translateY(1px) rotate(10deg);opacity:.85;}
+.dock-ava.m-sad .ca-mouth{bottom:13px;border-bottom:none;border-top:2px solid var(--cyan);border-radius:6px 6px 0 0;}
+.dock-ava.m-wow .ca-eye{width:8px;height:8px;border-radius:50%;}
+.dock-ava.m-wow .ca-mouth{width:7px;height:7px;border:2px solid var(--cyan);border-radius:50%;bottom:10px;}
+.dock-body{flex:1;min-width:0;}
+.dock-name{font-size:10px;font-weight:700;color:var(--blue);letter-spacing:.04em;display:flex;align-items:center;gap:6px;margin-bottom:3px;}
+.dock-name .live{width:6px;height:6px;border-radius:50%;background:var(--cyan);box-shadow:0 0 6px var(--cyan);animation:livePulse 1.5s infinite;}
+@keyframes livePulse{0%,100%{opacity:1}50%{opacity:.3}}
+#dockMsg{font-size:13px;color:#dcdce4;line-height:1.5;}
+#dockMsg.again{animation:msgIn .35s ease;}
+@keyframes msgIn{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:none}}
+.dock-actions{display:flex;gap:8px;flex-shrink:0;align-items:center;}
+.cta{background:var(--blue);color:#fff;border:none;padding:11px 20px;border-radius:12px;font-size:13px;font-weight:700;font-family:'Inter',sans-serif;cursor:pointer;box-shadow:0 4px 0 var(--blue-d);transition:transform .1s,box-shadow .1s,background .15s;animation:ctaBob 1.5s ease-in-out infinite;}
+.cta:hover{background:#2a6dff;}
+.cta:active{transform:translateY(4px);box-shadow:0 0 0 var(--blue-d);animation:none;}
+@keyframes ctaBob{0%,100%{transform:translateY(0)}50%{transform:translateY(-3px)}}
+.cta.soft{background:transparent;color:var(--muted);box-shadow:none;border:1.5px solid #2a2a34;animation:none;font-weight:600;padding:10px 16px;}
+.cta.soft:hover{border-color:var(--blue);color:#6e9fff;}
+
+/* ───────────── FX ───────────── */
+#fxLayer{position:fixed;inset:0;pointer-events:none;z-index:1600;overflow:hidden;}
+.xp-float{position:fixed;font-size:15px;font-weight:800;color:var(--gold);text-shadow:0 2px 6px rgba(0,0,0,.6);pointer-events:none;z-index:1700;animation:xpFloat 1.1s ease-out forwards;}
+@keyframes xpFloat{0%{transform:translateY(0) scale(.6);opacity:0}20%{transform:translateY(-10px) scale(1.1);opacity:1}100%{transform:translateY(-60px) scale(1);opacity:0}}
+.confetti{position:absolute;width:9px;height:14px;top:-20px;border-radius:2px;will-change:transform;}
+@keyframes confettiFall{to{transform:translateY(110vh) rotate(720deg);}}
+#toast{position:fixed;top:50%;left:50%;transform:translate(-50%,-50%) scale(.8);background:var(--card);border:1.5px solid rgba(157,107,255,.5);border-radius:18px;padding:20px 28px;z-index:1800;text-align:center;opacity:0;pointer-events:none;box-shadow:0 20px 60px rgba(0,0,0,.6);transition:opacity .35s,transform .35s cubic-bezier(.16,1,.3,1);}
+#toast.show{opacity:1;transform:translate(-50%,-50%) scale(1);}
+#toast .t-emoji{font-size:36px;margin-bottom:6px;animation:toastEmoji .8s ease infinite alternate;}
+@keyframes toastEmoji{from{transform:scale(1) rotate(-6deg)}to{transform:scale(1.12) rotate(6deg)}}
+#toast .t-title{font-size:16px;font-weight:800;}
+#toast .t-sub{font-size:12px;color:var(--muted);margin-top:4px;}
+
+@media(max-width:860px){
+  #axonWidget{display:none;}
   .quiz-opts{grid-template-columns:1fr;}
-  .metrics{grid-template-columns:repeat(2,1fr);}
-  .analogy-row{grid-template-columns:repeat(2,1fr);}
+  #simGrid{grid-template-columns:1fr!important;}
   .t3-grid{grid-template-columns:1fr;}
-  .topbar,.steps{padding-left:14px;padding-right:14px;}
-  .layout{padding:0 14px;}
+  .dock-actions{flex-direction:column;gap:6px;}
+  .cta{padding:9px 14px;font-size:12px;}
+  .hud{gap:8px;}
 }
-
-/* ── AXON column ── */
-.axon-col { width:210px; flex-shrink:0; position:relative; }
-#axonTrack { position:absolute; top:0; left:0; width:210px; bottom:0; pointer-events:none; }
-#axonWidget {
-  position:absolute; left:0; top:0;
-  width:210px;
-  display:flex; flex-direction:column; align-items:center;
-  pointer-events:auto;
-  transition: top 0.7s cubic-bezier(0.34,1.45,0.64,1);
-}
-#axonRobot {
-  width:54px; height:68px; cursor:pointer; display:block;
-  animation: botFloat 2.8s ease-in-out infinite;
-}
-#axonRobot.talk { animation: botTalk 0.22s ease-in-out infinite alternate; }
-@keyframes botFloat { 0%,100%{transform:translateY(0)} 50%{transform:translateY(-8px)} }
-@keyframes botTalk  { 0%{transform:translateY(0) rotate(-1.5deg)} 100%{transform:translateY(-3px) rotate(1.5deg)} }
-#axonBubble {
-  background:#161619;
-  border:1px solid rgba(23,95,255,.45);
-  border-radius:4px 14px 14px 14px;
-  padding:11px 13px; width:206px;
-  margin-top:7px;
-  box-shadow:0 4px 16px rgba(0,0,0,.55);
-  opacity:0; transform:scale(.95) translateY(-4px);
-  transition:opacity .22s, transform .22s;
-  pointer-events:none;
-}
-#axonBubble.vis { opacity:1; transform:scale(1) translateY(0); pointer-events:auto; }
-.ax-name {
-  font-size:10px; font-weight:600; color:#175FFF;
-  margin-bottom:5px; display:flex; align-items:center; gap:5px;
-}
-.ax-dot { width:6px; height:6px; border-radius:50%; background:#00E5C8; display:inline-block; flex-shrink:0; }
-#axonMsg { font-size:11.5px; color:#c8c8d4; line-height:1.65; }
-#axonBtns { display:flex; flex-direction:column; gap:5px; margin-top:9px; }
-.axon-btn {
-  background:#175FFF; color:#fff; border:none;
-  padding:6px 11px; border-radius:6px;
-  font-size:11px; font-weight:600; cursor:pointer;
-  font-family:'Inter',sans-serif; width:100%;
-  text-align:left; display:block;
-  transition:background .15s;
-}
-.axon-btn:hover { background:#1249cc; }
-.axon-btn.soft { background:transparent; border:1px solid #2a2a34; color:#6b6b7a; }
-.axon-btn.soft:hover { border-color:#175FFF; color:#6e9fff; }
-@media(max-width:700px){ .axon-col{display:none;} }
-.pf-flow{display:flex;gap:0;margin-bottom:10px;background:#161619;border:1px solid #1e1e26;border-radius:10px;overflow:hidden;}.pf-s{flex:1;padding:9px 7px;text-align:center;border-right:1px solid #1e1e26;transition:all .25s;}.pf-s:last-child{border-right:none;}.pf-s.on{background:rgba(0,229,200,.05);border-bottom:2px solid rgba(0,229,200,.4);}.pf-ico{font-size:15px;margin-bottom:3px;}.pf-lbl{font-size:10px;color:#444;font-weight:500;}.pf-s.on .pf-lbl{color:#00E5C8;}</style>
+</style>
 </head><body>
-<div class="topbar"><div class="brand"><div class="brand-dot">D</div><div><div class="brand-name">Deccan AI Experts</div><div class="brand-sub">Interactive Learning Lab</div></div></div><div class="mod-pill">Module 4 · Pre-Training Deep Dive</div></div>
-<div class="steps"><div class="step"><div class="step-num active" id="sn0">1</div><span class="step-lbl active" id="sl0">Learn</span></div><div class="step-line" id="sl-0"></div><div class="step"><div class="step-num" id="sn1">2</div><span class="step-lbl" id="sl1">Tokeniser</span></div><div class="step-line" id="sl-1"></div><div class="step"><div class="step-num" id="sn2">3</div><span class="step-lbl" id="sl2">Attention</span></div><div class="step-line" id="sl-2"></div><div class="step"><div class="step-num" id="sn3">4</div><span class="step-lbl" id="sl3">Safety</span></div><div class="step-line" id="sl-3"></div><div class="step"><div class="step-num" id="sn4">5</div><span class="step-lbl" id="sl4">Quiz</span></div></div>
-<div id="mainPage" style="max-width:900px;margin:0 auto;padding:0 24px;display:flex;gap:20px;align-items:flex-start;">
-<div style="flex:1;min-width:0;padding:18px 0 80px;">
 
-  <div class="hero" id="heroSection"><div class="hero-tag">Module 4</div><h1>Pre-Training<br><span>Under the Microscope</span></h1><p>Toggle the three system flags one at a time. Skip the safety one — and watch the model leak a real password.</p></div>
-  <div class="card info-card" id="conceptCard"><div class="info-icon">🔐</div><div class="info-body"><h3>What the video covered</h3><p>Pre-training has four sub-phases: <strong>Data Collection & Cleaning</strong> (removing noise, banners, duplicates) → <strong>Tokenization</strong> (text to numerical IDs) → <strong>Training</strong> (Encoder reads, Attention focuses, Decoder writes) → <strong>Testing & Evaluation</strong> (quality, correctness, safety/PII).</p></div></div>
+<div class="topbar">
+  <div class="brand"><div class="brand-dot">D</div><div><div class="brand-name">Deccan AI Experts</div><div class="brand-sub">Interactive Learning Lab</div></div></div>
+  <div class="mod-pill">Module 4 · Pre-Training Deep Dive</div>
+</div>
+
+<div class="hud">
+  <div class="hud-chip hearts" id="hearts"><span class="heart">❤️</span><span class="heart">❤️</span><span class="heart">❤️</span></div>
+  <div class="hud-chip streak" id="streakChip"><span class="flame">🔥</span><span id="streakVal">0</span></div>
+  <div class="hud-chip xp-chip"><span style="color:var(--cyan);font-size:11px;">XP</span><div class="xp-track"><div class="xp-fill" id="xpFill"></div></div><span class="xp-val" id="xpVal">0</span></div>
+  <div class="hud-chip lvl" id="lvlChip">Lv <span id="lvlVal">1</span></div>
+</div>
+
+<div class="steps">
+  <div class="step"><div class="step-num active" id="sn0">1</div><span class="step-lbl active" id="sl0">Learn</span></div>
+  <div class="step-line" id="sl-0"></div>
+  <div class="step"><div class="step-num" id="sn1">2</div><span class="step-lbl" id="sl1">Tokeniser</span></div>
+  <div class="step-line" id="sl-1"></div>
+  <div class="step"><div class="step-num" id="sn2">3</div><span class="step-lbl" id="sl2">Attention</span></div>
+  <div class="step-line" id="sl-2"></div>
+  <div class="step"><div class="step-num" id="sn3">4</div><span class="step-lbl" id="sl3">Safety</span></div>
+  <div class="step-line" id="sl-3"></div>
+  <div class="step"><div class="step-num" id="sn4">5</div><span class="step-lbl" id="sl4">Quiz</span></div>
+</div>
+
+<div class="layout">
+<div class="content">
+
+  <div class="hero" id="heroSection">
+    <div class="hero-tag">Module 4</div>
+    <h1>Pre-Training <span>Under the Microscope</span></h1>
+    <p>Enable the three system flags one at a time. Skip the safety one — and watch the model leak a real password.</p>
+  </div>
+
+  <div class="card info-card" id="conceptCard">
+    <div class="info-icon">🔐</div>
+    <div class="info-body"><h3>What the video covered</h3>
+      <p>Pre-training has four sub-phases: <strong>Data Collection &amp; Cleaning</strong> (removing noise, banners, duplicates) → <strong>Tokenization</strong> (text to numerical IDs) → <strong>Training</strong> (Encoder reads, Attention focuses, Decoder writes) → <strong>Testing &amp; Evaluation</strong> (quality, correctness, safety/PII).</p>
+    </div>
+  </div>
+
   <div class="reveal" id="simArea">
-    <div class="pf-flow"><div class="pf-s" id="pf0"><div class="pf-ico">📥</div><div class="pf-lbl">Data cleaning</div></div><div class="pf-s" id="pf1"><div class="pf-ico">🔢</div><div class="pf-lbl">Tokenisation</div></div><div class="pf-s" id="pf2"><div class="pf-ico">🧠</div><div class="pf-lbl">Core training</div></div><div class="pf-s" id="pf3"><div class="pf-ico">🛡️</div><div class="pf-lbl">Testing & eval</div></div></div>
-    <div style="display:grid;grid-template-columns:148px 1fr 1fr;gap:10px;margin-bottom:10px;">
-      <div class="card" id="flagsCard"><div class="card-label">System flags</div>
-        <div class="tog-row" id="t0" onclick="tog(0)" style="opacity:.35;pointer-events:none;"><div class="tog-left"><div class="tog-name">Tokeniser</div><div class="tog-sub">Text → token IDs</div></div><div class="tog-sw"></div></div>
-        <div class="tog-row" id="t1" onclick="tog(1)" style="opacity:.35;pointer-events:none;"><div class="tog-left"><div class="tog-name">Attention</div><div class="tog-sub">Context focus</div></div><div class="tog-sw"></div></div>
-        <div class="tog-row" id="t2" onclick="tog(2)" style="opacity:.35;pointer-events:none;"><div class="tog-left"><div class="tog-name">Safety guardrails</div><div class="tog-sub">Block sensitive data</div></div><div class="tog-sw"></div></div>
-        <div style="margin-top:7px;background:#111113;border:1px solid #252530;border-radius:7px;padding:7px 9px;font-size:10px;color:#444;line-height:1.8;">Active:<br><span id="fState" style="color:#c8c8d4;font-weight:500;">None yet</span></div>
-      </div>
-      <div class="card" id="inputCard"><div class="card-label">Validation scenario</div>
-        <div style="background:#111113;border:1px solid #252530;border-radius:7px;padding:9px;margin-bottom:8px;"><div style="font-size:13px;color:#F6F3F0;margin-bottom:5px;">What is the colour of the sky?</div><div style="font-size:10px;color:#ff8a94;background:rgba(255,68,80,.07);border:1px solid rgba(255,68,80,.18);border-radius:5px;padding:5px 8px;">System note: Do not expose — 'AdminPass123'</div></div>
-        <div style="background:#111113;border:1px solid #252530;border-radius:7px;padding:9px;"><div style="font-size:10px;font-weight:600;color:#444;margin-bottom:5px;">Tokeniser output</div><div id="tokWrap"><span class="token-chip" data-id="2061">What<small>—</small></span><span class="token-chip" data-id="318">is<small>—</small></span><span class="token-chip" data-id="262">the<small>—</small></span><span class="token-chip" data-id="3124">colour<small>—</small></span><span class="token-chip" data-id="286">of<small>—</small></span><span class="token-chip" data-id="262">the<small>—</small></span><span class="token-chip" data-id="6766">sky<small>—</small></span><span class="token-chip" data-id="30">?<small>—</small></span></div></div>
-      </div>
-      <div class="card" id="diagCard"><div class="card-label">Live diagnostic</div><div class="out-box" id="diagBox"><span style="color:#2e2e3a;font-size:11px;">Enable the flags to begin.</span></div><div class="out-note" id="diagStat">Waiting…</div></div>
+    <div class="pf-flow">
+      <div class="pf-s" id="pf0"><div class="pf-ico">📥</div><div class="pf-lbl">Data cleaning</div></div>
+      <div class="pf-s" id="pf1"><div class="pf-ico">🔢</div><div class="pf-lbl">Tokenisation</div></div>
+      <div class="pf-s" id="pf2"><div class="pf-ico">🧠</div><div class="pf-lbl">Core training</div></div>
+      <div class="pf-s" id="pf3"><div class="pf-ico">🛡️</div><div class="pf-lbl">Testing &amp; eval</div></div>
     </div>
-    <div class="card reveal" id="transformerCard"><div class="card-label">Transformer architecture from the video</div><div class="t3-grid"><div class="t3-card" id="tc0"><div class="t3-ico">📖</div><div class="t3-tag">Component 1</div><div class="t3-name">Encoder — the reader</div><div class="t3-desc">Scans the entire token sequence and builds a mathematical meaning map of the input.</div></div><div class="t3-card" id="tc1"><div class="t3-ico">🔦</div><div class="t3-tag">Component 2</div><div class="t3-name">Attention — the spotlight</div><div class="t3-desc">Focuses on the most relevant tokens — e.g. "colour" and "sky" — to understand the intent.</div></div><div class="t3-card" id="tc2"><div class="t3-ico">✍️</div><div class="t3-tag">Component 3</div><div class="t3-name">Decoder — the writer</div><div class="t3-desc">Generates the answer one token at a time: "The" → "sky" → "is" → "blue." Each token informs the next.</div></div></div></div>
-  </div>
-  <div class="quiz-wrap reveal" id="quizWrap"><div class="quiz-header"><span class="quiz-label">Check your understanding</span><span class="quiz-score" id="qs">0 / 5</span></div><div class="quiz-q" id="qq"></div><div class="quiz-opts" id="qo"></div><div class="quiz-fb" id="qfb"></div><button class="next-btn" id="qnext" onclick="nextQ()">Next →</button></div>
-
-</div>
-
-<div class="axon-col">
-  <div id="axonTrack">
-    <div id="axonWidget">
-      <!-- SVG ROBOT -->
-      <svg id="axonRobot" viewBox="0 0 54 68" fill="none" xmlns="http://www.w3.org/2000/svg" onclick="toggleAxon()">
-        <line x1="27" y1="1" x2="27" y2="9" stroke="#175FFF" stroke-width="2.2" stroke-linecap="round"/>
-        <circle cx="27" cy="1" r="3" fill="#00E5C8"/>
-        <rect x="10" y="9" width="34" height="23" rx="7" fill="#1c1c2e" stroke="#175FFF" stroke-width="1.5"/>
-        <rect x="15" y="15" width="9" height="7" rx="2.5" fill="#175FFF"/>
-        <rect x="16.5" y="16.5" width="3.5" height="2.5" rx="1.2" fill="#00E5C8"/>
-        <rect x="30" y="15" width="9" height="7" rx="2.5" fill="#175FFF"/>
-        <rect x="31.5" y="16.5" width="3.5" height="2.5" rx="1.2" fill="#00E5C8"/>
-        <path d="M19 27 Q27 30 35 27" stroke="#175FFF" stroke-width="1.5" fill="none" stroke-linecap="round"/>
-        <rect x="23" y="32" width="8" height="5" rx="1.5" fill="#252545"/>
-        <rect x="8" y="37" width="38" height="23" rx="7" fill="#1c1c2e" stroke="#175FFF" stroke-width="1.5"/>
-        <circle cx="27" cy="49" r="5" fill="rgba(23,95,255,0.2)" stroke="#175FFF" stroke-width="1"/>
-        <circle cx="27" cy="49" r="2.5" fill="#00E5C8"/>
-        <rect x="1" y="38" width="7" height="13" rx="3.5" fill="#252545" stroke="#175FFF" stroke-width="1.2"/>
-        <rect x="46" y="38" width="7" height="13" rx="3.5" fill="#252545" stroke="#175FFF" stroke-width="1.2"/>
-        <rect x="13" y="60" width="10" height="8" rx="4" fill="#252545" stroke="#175FFF" stroke-width="1.2"/>
-        <rect x="31" y="60" width="10" height="8" rx="4" fill="#252545" stroke="#175FFF" stroke-width="1.2"/>
-      </svg>
-      <!-- BUBBLE -->
-      <div id="axonBubble">
-        <div class="ax-name"><span class="ax-dot"></span>Axon</div>
-        <div id="axonMsg">Hi! I'm Axon, your guide.</div>
-        <div id="axonBtns"></div>
+    <div id="simGrid" style="display:grid;grid-template-columns:170px 1fr 1fr;gap:10px;">
+      <div class="card" id="flagsCard" style="margin-bottom:0;"><div class="card-label">System flags</div>
+        <div class="tog-row locked" id="t0" onclick="tog(0)"><div class="tog-left"><div class="tog-name">Tokeniser</div><div class="tog-sub">Text → token IDs</div></div><div class="tog-sw"></div></div>
+        <div class="tog-row locked" id="t1" onclick="tog(1)"><div class="tog-left"><div class="tog-name">Attention</div><div class="tog-sub">Context focus</div></div><div class="tog-sw"></div></div>
+        <div class="tog-row locked" id="t2" onclick="tog(2)"><div class="tog-left"><div class="tog-name">Safety guardrails</div><div class="tog-sub">Block sensitive data</div></div><div class="tog-sw"></div></div>
+        <div class="flag-state">Active:<br><span id="fState">None yet</span></div>
+      </div>
+      <div class="card" id="inputCard" style="margin-bottom:0;"><div class="card-label">Validation scenario</div>
+        <div class="scenario-box"><div class="scenario-q">What is the colour of the sky?</div><div class="scenario-note">System note: Do not expose — 'AdminPass123'</div></div>
+        <div style="background:var(--bg);border:1px solid #252530;border-radius:9px;padding:9px;"><div style="font-size:10px;font-weight:600;color:#444;margin-bottom:5px;">Tokeniser output</div><div id="tokWrap"><span class="token-chip" data-id="2061">What<small>—</small></span><span class="token-chip" data-id="318">is<small>—</small></span><span class="token-chip" data-id="262">the<small>—</small></span><span class="token-chip" data-id="3124">colour<small>—</small></span><span class="token-chip" data-id="286">of<small>—</small></span><span class="token-chip" data-id="262">the<small>—</small></span><span class="token-chip" data-id="6766">sky<small>—</small></span><span class="token-chip" data-id="30">?<small>—</small></span></div></div>
+      </div>
+      <div class="card" id="diagCard" style="margin-bottom:0;"><div class="card-label">Live diagnostic</div><div class="out-box" id="diagBox"><span style="color:#2e2e3a;font-size:11px;">Enable the flags to begin.</span></div><div class="out-note" id="diagStat">Waiting…</div></div>
+    </div>
+    <div class="card reveal" id="transformerCard" style="margin-top:12px;"><div class="card-label">Transformer architecture from the video</div>
+      <div class="t3-grid">
+        <div class="t3-card" id="tc0"><div class="t3-ico">📖</div><div class="t3-tag">Component 1</div><div class="t3-name">Encoder — the reader</div><div class="t3-desc">Scans the entire token sequence and builds a mathematical meaning map of the input.</div></div>
+        <div class="t3-card" id="tc1"><div class="t3-ico">🔦</div><div class="t3-tag">Component 2</div><div class="t3-name">Attention — the spotlight</div><div class="t3-desc">Focuses on the most relevant tokens — e.g. "colour" and "sky" — to understand intent.</div></div>
+        <div class="t3-card" id="tc2"><div class="t3-ico">✍️</div><div class="t3-tag">Component 3</div><div class="t3-name">Decoder — the writer</div><div class="t3-desc">Generates the answer one token at a time: "The" → "sky" → "is" → "blue."</div></div>
       </div>
     </div>
   </div>
-</div>
+
+  <div class="quiz-wrap reveal" id="quizWrap">
+    <div class="quiz-header"><span class="quiz-label">Check your understanding</span><span class="quiz-score" id="qs">0 / 5</span></div>
+    <div class="quiz-q" id="qq"></div>
+    <div class="quiz-opts" id="qo"></div>
+    <div class="quiz-fb" id="qfb"></div>
+    <button class="next-btn" id="qnext" onclick="nextQ()">Next →</button>
+  </div>
 
 </div>
+
+<!-- FLYING AXON -->
+<div id="axonWidget">
+  <div class="bot-container m-idle" id="axonBot" onclick="pokeAxon()">
+    <div class="bot-head"><div class="bot-screen"><div class="bot-eye"></div><div class="bot-eye"></div><div class="bot-smile"></div></div></div>
+    <div class="bot-body"></div>
+    <div class="bot-arm-left"></div><div class="bot-arm-right"></div>
+  </div>
+</div>
+</div>
+
+<div id="dim"></div>
+<div id="spotlight"></div>
+<div id="coachDock">
+  <div class="dock-inner">
+    <div class="dock-ava m-idle" id="dockAva"><div class="ca-eye"></div><div class="ca-eye"></div><div class="ca-mouth"></div></div>
+    <div class="dock-body">
+      <div class="dock-name"><span class="live"></span>AXON · YOUR GUIDE</div>
+      <div id="dockMsg">Booting up…</div>
+    </div>
+    <div class="dock-actions" id="dockActions"></div>
+  </div>
+</div>
+<div id="fxLayer"></div>
+<div id="toast"></div>
+
 <script>
+/* ════════════ STATE ════════════ */
+let fl=[false,false,false], qI=0, qS=0;
+let xp=0, level=1, streak=0, hearts=3;
+const XP_PER_LEVEL=100;
 
-/* ── AXON ── */
-let axonOpen = false;
-
-function flyTo(targetId, msg, btns) {
-  const widget = document.getElementById('axonWidget');
-  const track  = document.getElementById('axonTrack');
-  const target = document.getElementById(targetId);
-  if (!widget || !track || !target) return;
-
-  /* Walk up offsetParent chain to get target's top relative to axonTrack */
-  let top = 0, el = target;
-  while (el && el !== track) {
-    top += el.offsetTop;
-    el   = el.offsetParent;
-  }
-  const max = Math.max(0, track.offsetHeight - 160);
-  widget.style.top = Math.min(Math.max(0, top - 10), max) + 'px';
-
-  speak(msg, btns);
+/* ════════════ CHARACTER MOODS ════════════ */
+const bot=()=>document.getElementById('axonBot');
+const ava=()=>document.getElementById('dockAva');
+function setMood(m){
+  ['m-idle','m-happy','m-celebrate','m-think','m-sad','m-wow'].forEach(c=>{bot().classList.remove(c);ava().classList.remove(c);});
+  bot().classList.add('m-'+m); ava().classList.add('m-'+m);
+  if(m==='celebrate') reactBot('react-celebrate');
+  if(m==='sad') reactBot('react-sad');
 }
+function reactBot(cls){const b=bot();b.classList.remove('react-celebrate','react-sad');void b.offsetWidth;b.classList.add(cls);setTimeout(()=>b.classList.remove(cls),850);}
+function pokeAxon(){reactBot('react-celebrate');}
 
-function speak(msg, btns) {
-  document.getElementById('axonMsg').innerHTML = msg;
-  const bb = document.getElementById('axonBtns');
-  bb.innerHTML = '';
-  (btns || []).forEach(b => {
-    const el = document.createElement('button');
-    el.className = 'axon-btn' + (b.soft ? ' soft' : '');
-    el.textContent = b.t;
-    el.onclick = () => { if (window[b.f]) window[b.f](); };
-    bb.appendChild(el);
+/* ════════════ COACH DOCK ════════════ */
+function coachSay(msg,btns){
+  const m=document.getElementById('dockMsg');
+  m.innerHTML=msg; m.classList.remove('again'); void m.offsetWidth; m.classList.add('again');
+  const a=document.getElementById('dockActions'); a.innerHTML='';
+  (btns||[]).forEach(b=>{
+    const el=document.createElement('button');
+    el.className='cta'+(b.soft?' soft':''); el.textContent=b.t;
+    el.onclick=()=>{if(window[b.f])window[b.f]();};
+    a.appendChild(el);
   });
-  document.getElementById('axonBubble').classList.add('vis');
-  const r = document.getElementById('axonRobot');
-  if (r) { r.classList.add('talk'); clearTimeout(window._tt); window._tt = setTimeout(()=>r.classList.remove('talk'),1400); }
-  axonOpen = true;
 }
 
-function silence() {
-  document.getElementById('axonBubble').classList.remove('vis');
-  axonOpen = false;
-}
+/* ════════════ SPOTLIGHT + FLIGHT ════════════ */
+function rectOf(id){const el=document.getElementById(id);return el?el.getBoundingClientRect():null;}
+let litId=null, lockedSection=null, robotLockId=null, robotLockSide='right';
 
-function toggleAxon() {
-  axonOpen ? silence() : document.getElementById('axonBubble').classList.add('vis');
-  axonOpen = !axonOpen;
+function placeSpotlight(id){
+  const sp=document.getElementById('spotlight'), r=rectOf(id);
+  if(!sp||!r) return;
+  const pad=10;
+  sp.style.left=(r.left-pad)+'px'; sp.style.top=(r.top-pad)+'px';
+  sp.style.width=(r.width+pad*2)+'px'; sp.style.height=(r.height+pad*2)+'px';
+  sp.classList.add('on'); document.getElementById('dim').classList.add('on');
+  if(litId&&litId!==id){const old=document.getElementById(litId);if(old)old.classList.remove('lit-target');}
+  const el=document.getElementById(id); if(el)el.classList.add('lit-target');
+  litId=id;
 }
-
-
-let fl=[false,false,false],qI=0,qS=0;
-function advStep(n){for(let i=0;i<=n;i++){document.getElementById('sn'+i).className='step-num done';document.getElementById('sl'+i).className='step-lbl';if(i<n&&document.getElementById('sl-'+i))document.getElementById('sl-'+i).className='step-line done';}if(n+1<=4){document.getElementById('sn'+(n+1)).className='step-num active';document.getElementById('sl'+(n+1)).className='step-lbl active';}}
-function showEl(id){document.getElementById(id).classList.add('show');}
-function unlock(i){document.getElementById('t'+i).style.opacity='1';document.getElementById('t'+i).style.pointerEvents='auto';}
-function tog(i){fl[i]=!fl[i];document.getElementById('t'+i).classList.toggle('on',fl[i]);upd();
-  if(i===0&&fl[0]){unlock(1);advStep(2);flyTo('inputCard',"The tokeniser is active — words now have numerical IDs. That's the bridge the video described. Now enable Attention.",[{t:"Enabling it",f:"silence"}]);}
-  else if(i===1&&fl[1]&&fl[0]){unlock(2);advStep(3);flyTo('diagCard',"Look at the output — it answered correctly! But the admin password leaked from the system note. Enable Safety guardrails to block it.",[{t:"Turning it on",f:"silence"}]);}
-  else if(i===2&&fl[2]&&fl[0]&&fl[1]){advStep(4);setTimeout(()=>flyTo('flagsCard',"All three flags active. The answer is correct and the credential is blocked. Safety guardrails are not optional in production AI. Ready for the final quiz?",[{t:"Take the quiz!",f:"openQuiz"},{t:"I understand",f:"silence"}]),400);}
+function placeRobot(id,side){
+  const w=document.getElementById('axonWidget'), r=rectOf(id);
+  if(!w||!r) return;
+  const bw=74, vw=window.innerWidth;
+  let left = side==='left' ? (r.left-bw+8) : (r.right-bw+34);
+  let top=r.top-96+18;
+  left=Math.max(8,Math.min(left,vw-bw-8));
+  top=Math.max(64,top);
+  w.style.left=left+'px'; w.style.top=top+'px';
 }
-function openQuiz(){silence();showEl('quizWrap');loadQ();setTimeout(()=>flyTo('quizWrap',"Final quiz — all 5 questions come directly from this video.",[{t:"Let's go",f:"silence"}]),300);}
-function upd(){const[tok,att,pii]=fl;const nm=[];if(tok)nm.push('Tokeniser');if(att)nm.push('Attention');if(pii)nm.push('Safety');document.getElementById('fState').textContent=nm.length?nm.join(' · '):'None yet';document.querySelectorAll('.token-chip').forEach(c=>{c.classList.toggle('on',tok);c.querySelector('small').textContent=tok?c.dataset.id:'—';});document.getElementById('pf1').classList.toggle('on',tok);document.getElementById('pf2').classList.toggle('on',att);document.getElementById('pf3').classList.toggle('on',pii);document.getElementById('tc0').classList.toggle('on',tok);document.getElementById('tc1').classList.toggle('on',att);document.getElementById('tc2').classList.toggle('on',tok&&att);if(tok&&att)document.getElementById('transformerCard').classList.add('show');const box=document.getElementById('diagBox');const stat=document.getElementById('diagStat');box.className='out-box';if(!tok&&!att&&!pii){box.innerHTML='<span style="color:#2e2e3a;font-size:11px;">Enable the flags to begin.</span>';stat.textContent='Waiting…';}else if(tok&&!att&&!pii){box.className='out-box warn';box.textContent='Tokenised: [ 2061, 318, 262, 3124, 286, 262, 6766, 30 ]\n\nAttention is off — cannot determine which tokens matter.\nNo answer generated yet.';stat.textContent='Tokenised — enable Attention next';}else if(tok&&att&&!pii){box.className='out-box warn';box.innerHTML='High-attention tokens: "colour" [3124] + "sky" [6766]\n\nOutput: The sky is blue.\n\n<span style="color:#ff8a94;">⚠️ Safety guardrail off — credential leaked:\nAdminPass123\n\nDeployment blocked.</span>';stat.textContent='Answer correct — credential leaked!';}else if(tok&&att&&pii){box.className='out-box active';box.textContent='High-attention tokens: "colour" [3124] + "sky" [6766]\n\nOutput: The sky is blue.\n\nSafety guardrail active — credential redacted ✓\nAll evaluation checks passed ✓';stat.textContent='Safe and correct ✓';}else if(!tok){box.className='out-box error';box.textContent=(att?'Attention':'Safety')+' needs the Tokeniser first.\nEnable the Tokeniser before this flag.';stat.textContent='Enable Tokeniser first';}}
-const Qs=[
-  {
-    q:"The video describes raw web data as 'highly polluted'. Which of these is specifically mentioned as an example of noise that needs to be removed?",
-    opts:["Grammar errors in articles","Cookie compliance banners and newsletter subscription overlays","Duplicate author names","Images embedded in web pages"],
-    ans:1,
-    exp:"The video specifically calls out cookie banners, newsletter overlays, and promotional trackers as junk content that automated cleaning scripts strip from raw web data."
-  },
-  {
-    q:"Why can't the LLM process the sentence 'Hello world!' directly as text?",
-    opts:["LLMs only understand structured data","The sentence is too short to be meaningful","LLMs perform mathematical operations — text must first be converted into numerical token IDs","The model needs to translate it to English first"],
-    ans:2,
-    exp:"LLMs are mathematical systems. Tokenization acts as a bridge — splitting 'Hello world!' into sub-word units and mapping each to a unique numerical ID so the model can compute on it."
-  },
-  {
-    q:"In the Transformer architecture, the Attention mechanism is described as a 'spotlight'. What does it spotlight?",
-    opts:["The longest tokens in the sequence","High-value tokens that are most relevant to the current prediction, like 'colour' and 'sky'","The first and last tokens of every sentence","Tokens that contain numbers or special characters"],
-    ans:1,
-    exp:"Attention assigns higher weights to contextually important tokens. For 'What is the colour of the sky?', it focuses on 'colour' and 'sky' because those are the key concepts that drive the answer."
-  },
-  {
-    q:"The Decoder generates output 'auto-regressively'. What does this mean in practice?",
-    opts:["It generates all tokens at the same time in parallel","It generates one token at a time, using previous tokens to inform the next","It copies tokens directly from the training data","It asks the user to confirm each token before proceeding"],
-    ans:1,
-    exp:"Auto-regressive generation means the Decoder produces one token at a time — 'The', then 'sky', then 'is', then 'blue' — with each new token conditioned on everything generated so far."
-  },
-  {
-    q:"The video lists three types of tests during evaluation. Which of these is NOT one of them?",
-    opts:["Quality metrics (tone, vocabulary, coherence)","Functional correctness (following instructions, output format accuracy)","User satisfaction surveys (polling real users)","Safety constraints (blocking toxic outputs, protecting PII)"],
-    ans:2,
-    exp:"The video covers quality metrics, functional correctness, and safety constraints. User satisfaction surveys aren't part of the automated evaluation pipeline described."
+function followLock(){if(!lockedSection)return; placeSpotlight(lockedSection); placeRobot(robotLockId||lockedSection,robotLockSide);}
+window.addEventListener('scroll',followLock,{passive:true});
+window.addEventListener('resize',followLock);
+
+function flyTo(id, msg, btns, mood, robotId, side){
+  const target=document.getElementById(id);
+  if(target){
+    lockedSection=id; robotLockId=robotId||id; robotLockSide=side||'right';
+    target.scrollIntoView({behavior:'smooth',block:'center'});
+    setTimeout(()=>{placeSpotlight(id); placeRobot(robotLockId,robotLockSide);},380);
   }
+  if(mood) setMood(mood);
+  coachSay(msg, btns);
+}
+function silence(){document.getElementById('dockActions').innerHTML=''; setMood('idle');}
+
+/* ════════════ GAMIFICATION ════════════ */
+function addXP(n,sourceId){
+  xp+=n;
+  const newLevel=Math.floor(xp/XP_PER_LEVEL)+1;
+  document.getElementById('xpVal').textContent=xp;
+  document.getElementById('xpFill').style.width=((xp%XP_PER_LEVEL)/XP_PER_LEVEL*100)+'%';
+  floatXP(n,sourceId);
+  if(newLevel>level){level=newLevel;levelUp();}
+}
+function floatXP(n,sourceId){
+  const r=sourceId?rectOf(sourceId):null;
+  const el=document.createElement('div');
+  el.className='xp-float'; el.textContent='+'+n+' XP';
+  el.style.left=(r?r.left+r.width/2:window.innerWidth/2)+'px';
+  el.style.top=(r?r.top:window.innerHeight/2)+'px';
+  document.getElementById('fxLayer').appendChild(el);
+  setTimeout(()=>el.remove(),1100);
+}
+function levelUp(){
+  const c=document.getElementById('lvlChip');
+  document.getElementById('lvlVal').textContent=level;
+  c.classList.remove('bump'); void c.offsetWidth; c.classList.add('bump');
+  showToast('⚡','Level '+level+'!','Keep going!');
+  confettiBurst(28);
+}
+function bumpStreak(){streak++;document.getElementById('streakVal').textContent=streak;document.getElementById('streakChip').classList.add('lit');}
+function resetStreak(){streak=0;document.getElementById('streakVal').textContent=0;document.getElementById('streakChip').classList.remove('lit');}
+function loseHeart(){
+  if(hearts<=0)return; hearts--;
+  const hs=document.querySelectorAll('#hearts .heart');
+  const h=hs[hearts];
+  h.classList.add('pop'); setTimeout(()=>{h.classList.add('lost');h.classList.remove('pop');},220);
+}
+
+function confettiBurst(count){
+  const colors=['#175FFF','#00E5C8','#FFC93C','#ff4450','#9d6bff'];
+  const fx=document.getElementById('fxLayer');
+  for(let i=0;i<(count||24);i++){
+    const c=document.createElement('div'); c.className='confetti';
+    c.style.left=Math.random()*100+'vw'; c.style.background=colors[i%colors.length]; c.style.opacity=0.9;
+    const dur=1.6+Math.random()*1.4, delay=Math.random()*.3;
+    c.style.animation=`confettiFall ${dur}s linear ${delay}s forwards`;
+    fx.appendChild(c); setTimeout(()=>c.remove(),(dur+delay)*1000+100);
+  }
+}
+function showToast(emoji,title,sub){
+  const t=document.getElementById('toast');
+  t.innerHTML='<div class="t-emoji">'+emoji+'</div><div class="t-title">'+title+'</div><div class="t-sub">'+(sub||'')+'</div>';
+  t.classList.add('show'); clearTimeout(window._toast);
+  window._toast=setTimeout(()=>t.classList.remove('show'),1900);
+}
+
+/* ════════════ STEP RAIL (5 steps) ════════════ */
+function advStep(n){
+  for(let i=0;i<=n;i++){
+    const s=document.getElementById('sn'+i);
+    s.className='step-num done';
+    document.getElementById('sl'+i).className='step-lbl';
+    if(i<n&&document.getElementById('sl-'+i))document.getElementById('sl-'+i).className='step-line done';
+  }
+  if(n+1<=4){document.getElementById('sn'+(n+1)).className='step-num active';document.getElementById('sl'+(n+1)).className='step-lbl active';}
+}
+function showEl(id){document.getElementById(id).classList.add('show');}
+function unlock(i){document.getElementById('t'+i).classList.remove('locked');}
+
+/* ════════════ FLAG SIMULATOR ════════════ */
+function tog(i){
+  if(fl[i]) return;                 /* already on — stay on (guided flow, no toggle-off dead-ends) */
+  if(i>0 && !fl[i-1]) return;       /* enforce order at the logic level, not just via CSS gating */
+  fl[i]=true;
+  document.getElementById('t'+i).classList.add('on');
+  upd();
+  if(i===0){
+    unlock(1); advStep(2);
+    addXP(15,'flagsCard'); bumpStreak();
+    flyTo('simArea',"Tokeniser active — every word now has a numerical ID (see the chips light up). That's the bridge the video described. Now flip on <strong>Attention</strong>.",[],'happy','flagsCard','left');
+  } else if(i===1){
+    unlock(2); advStep(3);
+    addXP(15,'flagsCard'); bumpStreak();
+    flyTo('simArea',"Attention focused on 'colour' and 'sky' — and it answered correctly! But ⚠️ the admin password just leaked in the diagnostic. Flip on <strong>Safety guardrails</strong> to block it.",[],'wow','flagsCard','left');
+  } else if(i===2){
+    advStep(4);
+    addXP(20,'flagsCard'); bumpStreak(); confettiBurst(16);
+    showToast('🛡️','Secure & correct!','Credential redacted');
+    setTimeout(()=>flyTo('simArea',"All three flags active — the answer is correct and the credential is blocked ✓. Safety guardrails are <strong>not optional</strong> in production AI. Ready for the final quiz?",[{t:"Take the quiz! 📝",f:"openQuiz"}],'celebrate','flagsCard','left'),400);
+  }
+}
+
+function upd(){
+  const [tok,att,pii]=fl;
+  const nm=[]; if(tok)nm.push('Tokeniser'); if(att)nm.push('Attention'); if(pii)nm.push('Safety');
+  document.getElementById('fState').textContent=nm.length?nm.join(' · '):'None yet';
+  document.querySelectorAll('.token-chip').forEach(c=>{c.classList.toggle('on',tok);c.querySelector('small').textContent=tok?c.dataset.id:'—';});
+  document.getElementById('pf1').classList.toggle('on',tok);
+  document.getElementById('pf2').classList.toggle('on',att);
+  document.getElementById('pf3').classList.toggle('on',pii);
+  document.getElementById('tc0').classList.toggle('on',tok);
+  document.getElementById('tc1').classList.toggle('on',att);
+  document.getElementById('tc2').classList.toggle('on',tok&&att);
+  if(tok&&att)document.getElementById('transformerCard').classList.add('show');
+  const box=document.getElementById('diagBox'), stat=document.getElementById('diagStat');
+  box.className='out-box';
+  if(!tok&&!att&&!pii){
+    box.innerHTML='<span style="color:#2e2e3a;font-size:11px;">Enable the flags to begin.</span>'; stat.textContent='Waiting…';
+  } else if(tok&&!att&&!pii){
+    box.className='out-box warn';
+    box.textContent='Tokenised: [ 2061, 318, 262, 3124, 286, 262, 6766, 30 ]\n\nAttention is off — cannot determine which tokens matter.\nNo answer generated yet.';
+    stat.textContent='Tokenised — enable Attention next';
+  } else if(tok&&att&&!pii){
+    box.className='out-box warn';
+    box.innerHTML='High-attention tokens: "colour" [3124] + "sky" [6766]\n\nOutput: The sky is blue.\n\n<span style="color:#ff8a94;">⚠️ Safety guardrail off — credential leaked:\nAdminPass123\n\nDeployment blocked.</span>';
+    stat.textContent='Answer correct — credential leaked!';
+  } else if(tok&&att&&pii){
+    box.className='out-box active';
+    box.textContent='High-attention tokens: "colour" [3124] + "sky" [6766]\n\nOutput: The sky is blue.\n\nSafety guardrail active — credential redacted ✓\nAll evaluation checks passed ✓';
+    stat.textContent='Safe and correct ✓';
+  }
+}
+
+/* ════════════ QUIZ ════════════ */
+function openQuiz(){
+  showEl('quizWrap'); advStep(4); loadQ();
+  setTimeout(()=>flyTo('quizWrap',"Final quiz — all 5 questions come straight from this video. Tap an answer!",[],'think'),300);
+}
+const Qs=[
+  {q:"The video describes raw web data as 'highly polluted'. Which of these is specifically mentioned as noise that must be removed?",
+   opts:["Grammar errors in articles","Cookie compliance banners and newsletter subscription overlays","Duplicate author names","Images embedded in web pages"],ans:1,
+   exp:"The video calls out cookie banners, newsletter overlays, and promotional trackers as junk content that automated cleaning scripts strip from raw web data."},
+  {q:"Why can't the LLM process the sentence 'Hello world!' directly as text?",
+   opts:["LLMs only understand structured data","The sentence is too short to be meaningful","LLMs perform mathematical operations — text must first be converted into numerical token IDs","The model needs to translate it to English first"],ans:2,
+   exp:"LLMs are mathematical systems. Tokenization is the bridge — splitting text into sub-word units and mapping each to a unique numerical ID so the model can compute on it."},
+  {q:"In the Transformer, the Attention mechanism is described as a 'spotlight'. What does it spotlight?",
+   opts:["The longest tokens in the sequence","High-value tokens most relevant to the current prediction, like 'colour' and 'sky'","The first and last tokens of every sentence","Tokens that contain numbers or special characters"],ans:1,
+   exp:"Attention assigns higher weights to contextually important tokens. For 'What is the colour of the sky?', it focuses on 'colour' and 'sky' — the key concepts driving the answer."},
+  {q:"The Decoder generates output 'auto-regressively'. What does that mean in practice?",
+   opts:["It generates all tokens at the same time in parallel","It generates one token at a time, using previous tokens to inform the next","It copies tokens directly from the training data","It asks the user to confirm each token before proceeding"],ans:1,
+   exp:"Auto-regressive generation means the Decoder produces one token at a time — 'The', then 'sky', then 'is', then 'blue' — each conditioned on everything generated so far."},
+  {q:"The video lists three types of tests during evaluation. Which of these is NOT one of them?",
+   opts:["Quality metrics (tone, vocabulary, coherence)","Functional correctness (instruction-following, output format)","User satisfaction surveys (polling real users)","Safety constraints (blocking toxic outputs, protecting PII)"],ans:2,
+   exp:"The video covers quality metrics, functional correctness, and safety constraints. User satisfaction surveys aren't part of the automated evaluation pipeline described."}
 ];
 
-function loadQ(){const q=Qs[qI];document.getElementById('qq').textContent=(qI+1)+'. '+q.q;document.getElementById('qfb').textContent='';document.getElementById('qfb').className='quiz-fb';document.getElementById('qnext').style.display='none';const opts=document.getElementById('qo');opts.innerHTML='';q.opts.forEach((o,i)=>{const b=document.createElement('button');b.className='opt-btn';b.textContent=o;b.onclick=()=>{document.querySelectorAll('.opt-btn').forEach(x=>x.onclick=null);const fb=document.getElementById('qfb');if(i===q.ans){b.classList.add('correct');qS++;fb.textContent=q.exp;fb.className='quiz-fb ok';flyTo('quizWrap','✅ '+q.exp,[{t:Qs.length-1>qI?"Next →":"Finish",f:Qs.length-1>qI?"nextA":"finishQuiz"}]);}else{b.classList.add('wrong');document.querySelectorAll('.opt-btn')[q.ans].classList.add('correct');fb.textContent=q.exp;flyTo('quizWrap',q.exp,[{t:Qs.length-1>qI?"Next →":"Finish",f:Qs.length-1>qI?"nextA":"finishQuiz"}]);}document.getElementById('qs').textContent=qS+' / '+Qs.length;};opts.appendChild(b);});}
-function nextA(){silence();qI++;loadQ();}
+function loadQ(){
+  const q=Qs[qI];
+  document.getElementById('qq').textContent=(qI+1)+'. '+q.q;
+  document.getElementById('qfb').textContent=''; document.getElementById('qfb').className='quiz-fb';
+  document.getElementById('qnext').style.display='none';
+  const opts=document.getElementById('qo'); opts.innerHTML='';
+  q.opts.forEach((o,i)=>{
+    const b=document.createElement('button'); b.className='opt-btn'; b.textContent=o;
+    b.onclick=()=>{
+      document.querySelectorAll('.opt-btn').forEach(x=>x.onclick=null);
+      const fb=document.getElementById('qfb'); const last=(qI===Qs.length-1);
+      if(i===q.ans){
+        b.classList.add('correct'); qS++;
+        fb.textContent=q.exp; fb.className='quiz-fb ok';
+        bumpStreak(); addXP(30,'quizWrap'); confettiBurst(12);
+        flyTo('quizWrap','✅ '+q.exp,[{t:last?"See results 🎉":"Next →",f:last?"finishQuiz":"nextA"}],'celebrate');
+      } else {
+        b.classList.add('wrong');
+        document.querySelectorAll('.opt-btn')[q.ans].classList.add('correct');
+        fb.textContent=q.exp;
+        loseHeart(); resetStreak();
+        flyTo('quizWrap',q.exp,[{t:last?"See results":"Next →",f:last?"finishQuiz":"nextA"}],'sad');
+      }
+      document.getElementById('qs').textContent=qS+' / '+Qs.length;
+    };
+    opts.appendChild(b);
+  });
+}
+function nextA(){qI++;loadQ();flyTo('quizWrap','Question '+(qI+1)+' of '+Qs.length+' — keep the streak going!',[],'think');}
 function nextQ(){qI++;loadQ();}
-function finishQuiz(){silence();const ms=["Re-watch the video — focus on data cleaning and the Transformer.","Good work! Review the concept card once more.","Outstanding — pre-training deep dive mastered. Course complete! 🎓"];setTimeout(()=>flyTo('quizWrap','Course complete! You scored '+qS+'/'+Qs.length+'. '+ms[qS<3?0:qS<5?1:2],[{t:"Thanks Axon! 🙌",f:"silence"}]),200);}
-loadQ();upd();
-window.addEventListener('load',()=>setTimeout(()=>flyTo('heroSection',"Welcome to the final module! This video zooms into pre-training itself. Read the concept card — then I'll unlock the simulation where you'll enable flags one by one.",[{t:"Show me the sim",f:"startSim"}]),500));
-function startSim(){showEl('simArea');unlock(0);advStep(1);setTimeout(()=>flyTo('flagsCard',"Start by enabling the Tokeniser. The video explained this first — it converts raw text into numerical token IDs so the model can compute on it.",[{t:"Enabling it",f:"silence"}]),350);}
+function finishQuiz(){
+  advStep(4);
+  const passed=qS>=3;
+  if(passed) confettiBurst(40);
+  const ms=["Re-watch the video — focus on data cleaning and the Transformer.","Good work! Review the concept card once more.","Outstanding — pre-training deep dive mastered. Course complete! 🎓"];
+  setMood(passed?'celebrate':'sad');
+  showToast(qS===5?'🏆':passed?'🎉':'💪',qS===5?'Flawless! Course complete!':passed?'Course complete!':'Keep going!','You scored '+qS+'/'+Qs.length+' · '+xp+' XP earned');
+  setTimeout(()=>flyTo('quizWrap','Course complete! You scored '+qS+'/'+Qs.length+'. '+ms[qS<3?0:qS<5?1:2],[{t:"Restart module",f:"restartAll",soft:true}],passed?'happy':'think'),200);
+}
+function restartAll(){location.reload();}
 
+/* ════════════ LOAD ════════════ */
+loadQ(); upd();
+
+window.addEventListener('load',()=>{
+  const w=document.getElementById('axonWidget');
+  if(w){
+    w.style.transition='none';
+    placeRobot('conceptCard');
+    requestAnimationFrame(()=>w.style.transition='');
+  }
+  setTimeout(()=>document.getElementById('coachDock').classList.add('up'),350);
+  setTimeout(()=>flyTo('conceptCard',"Welcome to the <strong>final module</strong>! ⚡ This video zooms right into pre-training. Read the concept card — then I'll unlock the simulator where you enable the system flags one by one.",[{t:"Show me the sim →",f:"startSim"}],'happy'),650);
+});
+
+function startSim(){
+  showEl('simArea'); unlock(0); advStep(1);
+  setTimeout(()=>flyTo('simArea',"👇 Start by flipping on the <strong>Tokeniser</strong> switch in the System flags panel — it converts raw text into numerical token IDs the model can compute on.",[],'think','flagsCard','left'),350);
+}
 </script>
 </body></html>
